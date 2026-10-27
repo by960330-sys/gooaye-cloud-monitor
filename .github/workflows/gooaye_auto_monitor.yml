@@ -1,0 +1,54 @@
+name: Gooaye Podcast Auto-Monitor & Gemini 4 Argon Analyzer
+
+on:
+  schedule:
+    # 每 3 小時自動巡邏一次（台北時間全天候覆蓋週三、週六/週日股癌更新時段）
+    # 若無新集數，僅耗時 3 秒檢查 RSS 與 Google Drive 即結束，完全不消耗 Gemini Token
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+    inputs:
+      force_ep:
+        description: '強制重新分析指定集數（選填，例如：708；留空則自動檢查最新一集）'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  monitor-and-analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Gooaye Monitor & Gemini 4 Argon Analyzer
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GDRIVE_TOKEN_JSON: ${{ secrets.GDRIVE_TOKEN_JSON }}
+        run: |
+          if [ -n "${{ github.event.inputs.force_ep }}" ]; then
+            python gooaye_cloud_runner.py --force-ep "${{ github.event.inputs.force_ep }}"
+          else
+            python gooaye_cloud_runner.py
+          fi
+
+      - name: Commit updated monitor_state.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add monitor_state.json
+          git diff --staged --quiet || (git commit -m "chore: update monitor_state.json" && git push)
