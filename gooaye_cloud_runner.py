@@ -275,8 +275,48 @@ def download_audio(audio_url: str, ep_num: int, out_dir: Path) -> Path:
 
 
 # ============================================================================
-# Gemini 4 Argon Deep Analysis
+# Gemini 4 Argon Deep Analysis (with Automatic Multi-Model Fallback)
 # ============================================================================
+MODEL_PRIORITY_CHAIN = [
+    "gemini-4-argon",
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3-flash-preview",
+]
+
+
+def optimize_audio_for_gemini(mp3_path: Path) -> Path:
+    """將音訊最佳化為 16kHz 單聲道 32kbps MP3（大幅降低上傳體積與推論延遲，保留完整語音細節）。"""
+    opt_path = mp3_path.parent / f"{mp3_path.stem}_opt16k.mp3"
+    if opt_path.exists() and opt_path.stat().st_size > 500_000:
+        return opt_path
+
+    ffmpeg_bin = "ffmpeg"
+    try:
+        import imageio_ffmpeg
+        ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        pass
+
+    import subprocess
+    try:
+        subprocess.run(
+            [ffmpeg_bin, "-y", "-i", str(mp3_path), "-ac", "1", "-ar", "16000", "-b:a", "32k", str(opt_path)],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=120,
+        )
+        if opt_path.exists() and opt_path.stat().st_size > 500_000:
+            print(f"[INFO] 音訊已最佳化為 16kHz 單聲道: {opt_path.name} ({opt_path.stat().st_size / 1024 / 1024:.2f} MB)")
+            return opt_path
+    except Exception as e:
+        print(f"[WARN] 音訊最佳化略過，直接使用原檔 ({e})")
+    return mp3_path
+
+
 def analyze_audio_with_argon(mp3_path: Path, ep_num: int, title: str) -> str:
     from google import genai
 
@@ -284,10 +324,11 @@ def analyze_audio_with_argon(mp3_path: Path, ep_num: int, title: str) -> str:
     if not api_key:
         raise RuntimeError("未設定 GEMINI_API_KEY 環境變數！請在 GitHub Secrets 中設定 GEMINI_API_KEY。")
 
+    upload_target = optimize_audio_for_gemini(mp3_path)
     client = genai.Client(api_key=api_key)
 
-    print(f"[INFO] 正在上傳音訊至 Gemini Files API: {mp3_path.name} ...")
-    uploaded_file = client.files.upload(file=str(mp3_path))
+    print(f"[INFO] 正在上傳音訊至 Gemini Files API: {upload_target.name} ...")
+    uploaded_file = client.files.upload(file=str(upload_target))
     print(f"[INFO] 音訊上傳成功，URI: {uploaded_file.uri}")
 
     # Wait briefly if file is still processing
@@ -308,24 +349,59 @@ def analyze_audio_with_argon(mp3_path: Path, ep_num: int, title: str) -> str:
 3. 產出結構嚴謹、邏輯透徹、具備機構法人買方深度研究報告水準的繁體中文 Markdown 報告（以 `# 股癌 EP.{ep_num} 財經與產業深度分析報告` 為開頭標題）。"""
 
     try:
-        print(f"[INFO] 正在調用旗艦模型 gemini-4-argon 進行深度多模態推理分析...")
-        interaction = client.interactions.create(
-            model="gemini-4-argon",
-            system_instruction=SYSTEM_INSTRUCTION,
-            input=[
-                {"type": "text", "text": user_prompt},
-                {
-                    "type": "audio",
-                    "uri": uploaded_file.uri,
-                    "mime_type": uploaded_file.mime_type or "audio/mpeg",
+        last_err = None
+        for model_name in MODEL_PRIORITY_CHAIN:
+            print(f"[INFO] 正在嘗試調用模型 {model_name} 進行深度多模態推理分析...")
+            payload = {
+                "systemInstruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "fileData": {
+                                    "fileUri": uploaded_file.uri,
+                                    "mimeType": uploaded_file.mime_type or "audio/mpeg",
+                                }
+                            },
+                            {"text": user_prompt},
+                        ],
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.2,
                 },
-            ],
-        )
-        report_text = interaction.output_text
-        if not report_text or len(report_text.strip()) < 200:
-            raise RuntimeError("模型回傳內容過短或為空。")
-        print(f"[INFO] Gemini 4 Argon 深度報告生成完成（共 {len(report_text)} 字元）！")
-        return report_text
+            }
+            req_data = json.dumps(payload).encode("utf-8")
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+            req = urllib.request.Request(
+                url,
+                data=req_data,
+                headers={
+                    "x-goog-api-key": api_key,
+                    "Content-Type": "application/json; charset=utf-8",
+                },
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=240) as resp:
+                    resp_json = json.loads(resp.read().decode("utf-8"))
+                candidates = resp_json.get("candidates", [])
+                parts = candidates[0].get("content", {}).get("parts", []) if candidates else []
+                report_text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
+                if report_text and len(report_text) >= 200:
+                    print(f"[INFO] 模型 {model_name} 深度報告生成完成（共 {len(report_text)} 字元）！")
+                    return report_text
+                raise RuntimeError(f"模型 {model_name} 回傳內容過短 ({len(report_text)} 字元)")
+            except urllib.error.HTTPError as he:
+                err_body = he.read().decode("utf-8", errors="ignore")[:300]
+                print(f"[WARN] 模型 {model_name} 回應 HTTP {he.code}: {err_body}，自動切換下一順位模型...")
+                last_err = f"HTTP {he.code}: {err_body}"
+            except Exception as ex:
+                print(f"[WARN] 模型 {model_name} 執行異常 ({ex})，自動切換下一順位模型...")
+                last_err = str(ex)
+
+        raise RuntimeError(f"所有備援模型皆無法完成分析，最後錯誤：{last_err}")
     finally:
         try:
             client.files.delete(name=uploaded_file.name)
