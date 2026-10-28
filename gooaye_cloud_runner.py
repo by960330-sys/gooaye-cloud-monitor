@@ -51,6 +51,8 @@ SYSTEM_INSTRUCTION = """你是一位頂尖機構法人（買方 Buy-Side）的�
    - **第二部分：產業面與個股基本面深度拆解**（依產業板塊分類，詳列節目中提到的每一家公司/標的之基本面現況、法說會指引、供需缺口、技術演進與估值水位）
    - **第三部分：主持人的核心看法與市場觀點**（彙整核心警訊與長線趨勢判斷，並必須包含一張結構清晰的 **Markdown 對照總表**）
    - **第四部分：主持人的實戰操作策略與部位管理（含 QA 交易問答深度拆解）**（部位水位與加減碼邏輯、停利停損與風控原則、以及聽眾 QA 關鍵實戰問答逐題深度剖析）
+   - **第五部分（尾頁必備）：🖋️ 尾頁總結：AI 首席投資總監（Antigravity × Gemini 4 Argon）的獨立深度看法與投組實戰判讀**
+     - 嚴禁簡略！請跳脫單純的節目筆記整理，以機構買方首席投資總監（Buy-Side CIO）的高度，針對本集孟恭提到的產業趨勢與市場情緒，提出**你自己的獨立深度看法**（包含：哪些觀點你高度認同、哪些地方存在市場預期差 Expectation Gap 或潛在盲點、未來 1～2 季最關鍵的驗證指標，以及如何與投資人核心部位如台積電 2330、聯發科 2454、VOO、SPCX 等進行實戰連動配置）。
 """
 
 
@@ -277,7 +279,7 @@ def download_audio(audio_url: str, ep_num: int, out_dir: Path) -> Path:
 # ============================================================================
 # Gemini 4 Argon Deep Analysis (with Automatic Multi-Model Fallback)
 # ============================================================================
-MODEL_PRIORITY_CHAIN = ["gemini-4-argon", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3-flash-preview"]
+MODEL_PRIORITY_CHAIN = ["gemini-4-argon", "gemini-3.1-pro-preview", "gemini-pro-latest", "gemini-3.8-flash", "gemini-3-flash-preview", "gemini-3.6-flash", "gemini-3.5-flash"]
 
 
 def optimize_audio_for_gemini(mp3_path: Path) -> Path:
@@ -339,7 +341,8 @@ def analyze_audio_with_argon(mp3_path: Path, ep_num: int, title: str) -> str:
 請嚴格依照系統指令（financial-podcast-analyzer 買方研究總監規範）：
 1. 過濾開頭業配廣告與無關財經之家庭日常閒聊。
 2. 完整提取主軸討論與後半段「觀眾提問 (Q&A)」中所有關於股票、財經、產業趨勢、公司基本面（營收、毛利、市佔率、開案進度、法說會指引、估值）、籌碼面以及主持人的實戰交易策略與部位控管心法。
-3. 產出結構嚴謹、邏輯透徹、具備機構法人買方深度研究報告水準的繁體中文 Markdown 報告（以 `# 股癌 EP.{ep_num} 財經與產業深度分析報告` 為開頭標題）。"""
+3. 產出結構嚴謹、極度詳盡（目標 8,000～15,000 字以上，嚴禁濃縮省略細節）、具備機構法人買方深度研究報告水準的繁體中文 Markdown 報告（以 `# 股癌 EP.{ep_num} 財經與產業深度分析報告` 為開頭標題）。
+4. **必須在報告最後一頁（尾頁）附上獨立章節**：`## 🖋️ 尾頁總結：AI 首席投資總監（Gemini 4 Argon）的獨立深度看法與實戰判讀`，提出你對本集產業與盤勢的獨立見解、預期差分析與具體操作建議！"""
 
     try:
         last_err = None
@@ -363,6 +366,7 @@ def analyze_audio_with_argon(mp3_path: Path, ep_num: int, title: str) -> str:
                 ],
                 "generationConfig": {
                     "temperature": 0.2,
+                    "maxOutputTokens": 65536,
                 },
             }
             req_data = json.dumps(payload).encode("utf-8")
@@ -377,7 +381,7 @@ def analyze_audio_with_argon(mp3_path: Path, ep_num: int, title: str) -> str:
                 method="POST",
             )
             try:
-                with urllib.request.urlopen(req, timeout=240) as resp:
+                with urllib.request.urlopen(req, timeout=540) as resp:
                     resp_json = json.loads(resp.read().decode("utf-8"))
                 candidates = resp_json.get("candidates", [])
                 parts = candidates[0].get("content", {}).get("parts", []) if candidates else []

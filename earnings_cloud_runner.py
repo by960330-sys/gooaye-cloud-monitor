@@ -122,8 +122,10 @@ KNOWN_TW_NAME_TO_SYMBOL = {
 
 MODEL_PRIORITY_CHAIN = [
     "gemini-4-argon",
-    "gemini-3-flash-preview",
+    "gemini-3.1-pro-preview",
+    "gemini-pro-latest",
     "gemini-3.8-flash",
+    "gemini-3-flash-preview",
     "gemini-3.6-flash",
     "gemini-3.5-flash",
 ]
@@ -158,6 +160,12 @@ EARNINGS_SYSTEM_INSTRUCTION = """你是一位頂尖機構法人（買方 Buy-Sid
 - **估值水位與合理區間推演**：結合當前股價、Trailing P/E、Forward P/E 與未來 EPS 成長率，評估目前估值處於歷史區間的偏低、合理或偏高位置。
 - **未來 1～3 季關鍵催化劑 (Catalysts) 與下行風險 (Risks)**：條列最具影響力的多空觀察點。
 - **🎯 明確部位操作建議（Actionable Strategy）**：針對投資人目前的持股部位，明確給出「**逢低分批加碼 / 堅定續抱 / 逢高部分獲利了結 / 觀望防守**」的具體看法與關鍵觀察指標！
+
+## 🖋️ 尾頁總結：AI 首席投資總監（Antigravity × Gemini 4 Argon）的獨立深度看法與預期差判讀
+- **強制尾頁深度附錄（極度詳盡，嚴禁敷衍）**：在報告最末頁，請跳脫公司官方新聞稿與表面財務數字，以頂尖買方機構 CIO 的獨立視角，深入剖析：
+  1. **市場共識 vs. 我們的獨立預期差（Expectation Gap）**：華爾街與外資目前最容易低估或過度樂觀的盲點是什麼？
+  2. **產業鏈上下游交叉驗證**：從供應鏈（如先進製程、封裝、記憶體、CSP 資本支出、終端拉貨）驗證經營層說法的真實含金量。
+  3. **投資人專屬部位實戰結論**：結合投資人當前整體投資組合（台積電 2330.TW、聯發科 2454.TW、VOO、SPCX），給出最誠實、最犀利的最終定調與資金配置建議！
 """
 
 
@@ -772,7 +780,7 @@ def analyze_stock_with_argon(
             payload = {
                 "systemInstruction": {"parts": [{"text": sys_inst}]},
                 "contents": [{"role": "user", "parts": parts}],
-                "generationConfig": {"temperature": 0.2},
+                "generationConfig": {"temperature": 0.2, "maxOutputTokens": 65536},
             }
 
             req_data = json.dumps(payload).encode("utf-8")
@@ -787,7 +795,7 @@ def analyze_stock_with_argon(
                 method="POST",
             )
             try:
-                with urllib.request.urlopen(req, timeout=240) as resp:
+                with urllib.request.urlopen(req, timeout=540) as resp:
                     resp_json = json.loads(resp.read().decode("utf-8"))
                 candidates = resp_json.get("candidates", [])
                 resp_parts = candidates[0].get("content", {}).get("parts", []) if candidates else []

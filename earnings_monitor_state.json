@@ -1,5 +1,5 @@
 {
-  "last_checked_at": "2026-10-28 14:10:17",
+  "last_checked_at": "2026-10-28 14:27:22",
   "analyzed_holdings": {
     "2330.TW": {
       "symbol": "2330.TW",
@@ -16,7 +16,10 @@
         "mxy5xrdx88g"
       ],
       "last_analyzed_at": "2026-10-28 14:10:17",
-      "last_trigger_reason": "手動指定強制執行最新一季財報與法說會深度分析 (2330.TW)"
+      "last_trigger_reason": "手動指定強制執行最新一季財報與法說會深度分析 (2330.TW)",
+      "drive_url": "https://drive.google.com/drive/folders/1F0gERaJOD-OaMikiazxRSs4MQqrCuLFX",
+      "report_file": "2330_台積電_2026-09-30_法說會與財報深度分析.md",
+      "model": "gemini-4-argon (High Flagship)"
     },
     "2454.TW": {
       "symbol": "2454.TW",
@@ -32,7 +35,10 @@
         "KNxddNbfdzI",
         "nNwe0uVzrqY"
       ],
-      "last_analyzed_at": "2026-10-28 13:51:25"
+      "last_analyzed_at": "2026-10-28 13:51:25",
+      "drive_url": "https://drive.google.com/drive/folders/1AAAdiaVcfyRQsZrXpwGNT7VQfnqzQmD2",
+      "report_file": "2454_聯發科_2026-06-30_法說會與財報深度分析.md",
+      "model": "gemini-4-argon (High Flagship)"
     },
     "VOO": {
       "symbol": "VOO",
@@ -42,7 +48,10 @@
       "last_quarter_date": "BASELINE",
       "last_video_id": null,
       "analyzed_video_ids": [],
-      "last_analyzed_at": "2026-10-28 13:51:25"
+      "last_analyzed_at": "2026-10-28 13:51:25",
+      "drive_url": "https://drive.google.com/drive/folders/1d_W9wlctrY5efs5DMVYEQXwddDnhXwJW",
+      "report_file": "VOO_Vanguard S&P 500 ETF_2026-10_法說會與財報深度分析.md",
+      "model": "gemini-4-argon (High Flagship)"
     },
     "SPCX": {
       "symbol": "SPCX",
@@ -58,7 +67,10 @@
         "OXxhrFEzcT8",
         "rsFTR9iKdSo"
       ],
-      "last_analyzed_at": "2026-10-28 13:51:27"
+      "last_analyzed_at": "2026-10-28 13:51:27",
+      "drive_url": "https://drive.google.com/drive/folders/1AC-D_fFRMhPYgMnS9u8cpuYpgqYyaG8R",
+      "report_file": "SPCX_Space Exploration Technologies_2026-09-30_法說會與財報深度分析.md",
+      "model": "gemini-4-argon (High Flagship)"
     }
   },
   "history": [
