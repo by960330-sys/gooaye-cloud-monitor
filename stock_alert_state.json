@@ -2,5 +2,36 @@
   "alerts": {
     "2454.TW:2026-10-28": 6.44
   },
-  "last_checked_at": "2026-10-28 12:38:04"
+  "last_checked_at": "2026-10-28 13:08:56",
+  "holdings": [
+    {
+      "symbol": "2330.TW",
+      "ticker": "2330",
+      "name": "台積電",
+      "market": "TW",
+      "shares": 83
+    },
+    {
+      "symbol": "2454.TW",
+      "ticker": "2454",
+      "name": "聯發科",
+      "market": "TW",
+      "shares": 11
+    },
+    {
+      "symbol": "VOO",
+      "ticker": "VOO",
+      "name": "Vanguard S&P 500 ETF",
+      "market": "US",
+      "shares": 1
+    },
+    {
+      "symbol": "SPCX",
+      "ticker": "SPCX",
+      "name": "Space Exploration Technologies",
+      "market": "US",
+      "shares": 1
+    }
+  ],
+  "last_gmail_sync": "2026-10-28 13:08:55"
 }

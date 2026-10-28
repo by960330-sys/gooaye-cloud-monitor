@@ -1,4 +1,4 @@
-name: Stock Portfolio Volatility Cloud Monitor (3% / 6% / 8%)
+name: Stock Portfolio Volatility Cloud Monitor (3% / 6% / 10%)
 
 on:
   schedule:
