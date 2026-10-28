@@ -62,7 +62,7 @@ def is_us_market_open() -> bool:
 def load_state() -> dict:
     if STATE_FILE.exists():
         try:
-            with open(STATE_FILE, "r", encoding="utf-8") as f:
+            with open(STATE_FILE, "r", encoding="utf-8-sig") as f:
                 return json.load(f)
         except Exception:
             pass
