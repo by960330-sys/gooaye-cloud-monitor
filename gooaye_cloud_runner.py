@@ -277,7 +277,7 @@ def download_audio(audio_url: str, ep_num: int, out_dir: Path) -> Path:
 # ============================================================================
 # Gemini 4 Argon Deep Analysis (with Automatic Multi-Model Fallback)
 # ============================================================================
-MODEL_PRIORITY_CHAIN = ["gemini-4-argon"]
+MODEL_PRIORITY_CHAIN = ["gemini-4-argon", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3-flash-preview"]
 
 
 def optimize_audio_for_gemini(mp3_path: Path) -> Path:
