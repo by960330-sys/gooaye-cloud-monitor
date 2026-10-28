@@ -1,0 +1,64 @@
+{
+  "last_checked_at": "2026-10-28 13:51:54",
+  "analyzed_holdings": {
+    "2330.TW": {
+      "symbol": "2330.TW",
+      "ticker": "2330",
+      "name": "台積電",
+      "market": "TW",
+      "last_quarter_date": "2026-09-30",
+      "last_video_id": "GhbjSJ9Szcs",
+      "analyzed_video_ids": [
+        "GhbjSJ9Szcs",
+        "C_lJHfmYvH4",
+        "6C5dPg2khM4",
+        "7R1WELDBDFA",
+        "mxy5xrdx88g"
+      ],
+      "last_analyzed_at": "2026-10-28 13:51:23"
+    },
+    "2454.TW": {
+      "symbol": "2454.TW",
+      "ticker": "2454",
+      "name": "聯發科",
+      "market": "TW",
+      "last_quarter_date": "2026-06-30",
+      "last_video_id": "0IYqfOjVmZM",
+      "analyzed_video_ids": [
+        "0IYqfOjVmZM",
+        "fj_nDUUPlUI",
+        "GN7M7CZifZ0",
+        "KNxddNbfdzI",
+        "nNwe0uVzrqY"
+      ],
+      "last_analyzed_at": "2026-10-28 13:51:25"
+    },
+    "VOO": {
+      "symbol": "VOO",
+      "ticker": "VOO",
+      "name": "Vanguard S&P 500 ETF",
+      "market": "US",
+      "last_quarter_date": "BASELINE",
+      "last_video_id": null,
+      "analyzed_video_ids": [],
+      "last_analyzed_at": "2026-10-28 13:51:25"
+    },
+    "SPCX": {
+      "symbol": "SPCX",
+      "ticker": "SPCX",
+      "name": "Space Exploration Technologies",
+      "market": "US",
+      "last_quarter_date": "2026-09-30",
+      "last_video_id": "-RRKOP_JMdI",
+      "analyzed_video_ids": [
+        "-RRKOP_JMdI",
+        "xetd5bxGPe4",
+        "vc4Gso1GCkg",
+        "OXxhrFEzcT8",
+        "rsFTR9iKdSo"
+      ],
+      "last_analyzed_at": "2026-10-28 13:51:27"
+    }
+  },
+  "history": []
+}

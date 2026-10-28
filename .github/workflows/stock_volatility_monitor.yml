@@ -19,7 +19,7 @@ permissions:
 jobs:
   stock-volatility-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -30,7 +30,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Run Stock Volatility Check
+      - name: Run Stock Volatility Check & Gmail Holdings Sync
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -41,9 +41,33 @@ jobs:
             python stock_volatility_cloud.py
           fi
 
-      - name: Commit updated stock_alert_state.json
+      - name: Auto-Trigger Gemini 4 Argon Earnings Analysis if New Holding Detected
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GDRIVE_TOKEN_JSON: ${{ secrets.GDRIVE_TOKEN_JSON }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          NEW_DETECTED=$(python -c "
+          import json
+          from pathlib import Path
+          s1 = json.loads(Path('stock_alert_state.json').read_text(encoding='utf-8')) if Path('stock_alert_state.json').exists() else {}
+          s2 = json.loads(Path('earnings_monitor_state.json').read_text(encoding='utf-8')) if Path('earnings_monitor_state.json').exists() else {}
+          analyzed = set((s2.get('analyzed_holdings') or {}).keys())
+          holdings = [h['symbol'] for h in (s1.get('holdings') or []) if h.get('symbol') not in analyzed]
+          print('YES' if holdings else 'NO')
+          ")
+          if [ "$NEW_DETECTED" = "YES" ]; then
+            echo "🆕 偵測到新增持股標的，立即安裝依賴並啟動 Gemini 4 Argon 最新財報與法說會深度分析..."
+            pip install -r requirements.txt
+            python earnings_cloud_runner.py
+          else
+            echo "✅ 無新增未建檔之持股標的，跳過財報分析步驟。"
+          fi
+
+      - name: Commit updated state files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add stock_alert_state.json
-          git diff --staged --quiet || (git commit -m "chore: update stock_alert_state.json" && git pull --rebase origin main && git push)
+          git add stock_alert_state.json earnings_monitor_state.json
+          git diff --staged --quiet || (git commit -m "chore: update portfolio monitor states" && git pull --rebase origin main && git push)

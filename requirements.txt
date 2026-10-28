@@ -1,1 +1,4 @@
 google-genai>=2.30.1
+yfinance>=0.2.40
+yt-dlp>=2024.8.6
+imageio-ffmpeg>=0.5.1

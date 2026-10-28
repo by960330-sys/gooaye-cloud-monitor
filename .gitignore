@@ -1,4 +1,5 @@
 work_tmp/
+work_earnings_tmp/
 __pycache__/
 *.pyc
 .env
