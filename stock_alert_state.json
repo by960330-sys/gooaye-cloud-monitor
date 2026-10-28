@@ -2,7 +2,7 @@
   "alerts": {
     "2454.TW:2026-10-28": 6.44
   },
-  "last_checked_at": "2026-10-28 14:04:41",
+  "last_checked_at": "2026-10-28 13:09:54",
   "holdings": [
     {
       "symbol": "2330.TW",
@@ -33,5 +33,5 @@
       "shares": 1
     }
   ],
-  "last_gmail_sync": "2026-10-28 14:04:41"
+  "last_gmail_sync": "2026-10-28 14:02:00"
 }

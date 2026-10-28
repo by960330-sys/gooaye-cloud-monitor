@@ -1,5 +1,5 @@
 {
-  "last_checked_at": "2026-10-28 13:56:58",
+  "last_checked_at": "2026-10-28 14:10:17",
   "analyzed_holdings": {
     "2330.TW": {
       "symbol": "2330.TW",
@@ -7,7 +7,7 @@
       "name": "台積電",
       "market": "TW",
       "last_quarter_date": "2026-09-30",
-      "last_video_id": "GhbjSJ9Szcs",
+      "last_video_id": "mxy5xrdx88g",
       "analyzed_video_ids": [
         "GhbjSJ9Szcs",
         "C_lJHfmYvH4",
@@ -15,7 +15,8 @@
         "7R1WELDBDFA",
         "mxy5xrdx88g"
       ],
-      "last_analyzed_at": "2026-10-28 13:51:23"
+      "last_analyzed_at": "2026-10-28 14:10:17",
+      "last_trigger_reason": "手動指定強制執行最新一季財報與法說會深度分析 (2330.TW)"
     },
     "2454.TW": {
       "symbol": "2454.TW",
@@ -60,5 +61,14 @@
       "last_analyzed_at": "2026-10-28 13:51:27"
     }
   },
-  "history": []
+  "history": [
+    {
+      "symbol": "2330.TW",
+      "name": "台積電",
+      "quarter": "2026-09-30",
+      "reason": "手動指定強制執行最新一季財報與法說會深度分析 (2330.TW)",
+      "analyzed_at": "2026-10-28 14:10:17",
+      "drive_url": "https://drive.google.com/drive/folders/1F0gERaJOD-OaMikiazxRSs4MQqrCuLFX"
+    }
+  ]
 }

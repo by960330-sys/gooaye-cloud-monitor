@@ -122,11 +122,10 @@ KNOWN_TW_NAME_TO_SYMBOL = {
 
 MODEL_PRIORITY_CHAIN = [
     "gemini-4-argon",
+    "gemini-3-flash-preview",
     "gemini-3.8-flash",
-    "gemini-3.7-flash",
     "gemini-3.6-flash",
     "gemini-3.5-flash",
-    "gemini-3-flash-preview",
 ]
 
 EARNINGS_SYSTEM_INSTRUCTION = """你是一位頂尖機構法人（買方 Buy-Side）的首席科技與產業投資總監（CIO），擅長運用旗艦級模型（Gemini 4 Argon）的深度多模態推理能力，針對個人投資組合中的持股標的，結合「法說會（Earnings Call）原音錄音」、「近四季完整財務報表三率數據」與「最新市場外資共識」，產出具備一線外資與買方機構深度研究規格的分析報告，並給出極度明確的投資觀點與操作策略。
@@ -619,7 +618,7 @@ def search_and_download_earnings_audio(stock: dict, out_dir: Path) -> dict:
                     if has_stock and has_call_kw and 240 <= dur <= 7200:
                         # 優先挑選 20 分鐘以上之完整法說會原音
                         is_full_call = 1200 <= dur <= 6000 and any(k in low for k in ["完整", "live", "earnings call", "法說會"])
-                        score = (10000 if is_full_call else 1000) + min(dur, 4800)
+                        q_bonus = 4000 if any(k in low for k in ["第四季", "q4", "4q"]) else (3000 if any(k in low for k in ["第三季", "q3", "3q"]) else (2000 if any(k in low for k in ["第二季", "q2", "2q"]) else 0)); score = (20000 if is_full_call else 2000) + q_bonus + (2000 if str(year) in low else 0)
                         candidates.append((score, vid, title, dur))
             except Exception:
                 pass
@@ -656,7 +655,7 @@ def search_and_download_earnings_audio(stock: dict, out_dir: Path) -> dict:
         pass
 
     dl_opts = {
-        "format": "bestaudio/best",
+        "format": "bestaudio[abr<=64]/worstaudio/bestaudio",
         "outtmpl": raw_tmpl,
         "quiet": True,
         "no_warnings": True,
