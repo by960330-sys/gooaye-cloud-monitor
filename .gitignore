@@ -3,3 +3,5 @@ work_earnings_tmp/
 __pycache__/
 *.pyc
 .env
+
+realtime_monitor.log

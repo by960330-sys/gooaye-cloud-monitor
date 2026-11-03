@@ -611,7 +611,12 @@ def run_quote_scan_tick(state: dict, holdings: list, force: bool = False, verbos
 
 
 def main():
-    sys.stdout.reconfigure(encoding="utf-8")
+    if sys.stdout is None or sys.stderr is None:
+        log_file = open(Path(__file__).parent / "realtime_monitor.log", "a", encoding="utf-8", buffering=1)
+        sys.stdout = log_file
+        sys.stderr = log_file
+    elif hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Real-Time Stock Volatility Monitor (15s tick polling, 3% / 6% / 10%)")
     parser.add_argument("--force", action="store_true", help="忽略開盤時段限制強制檢查全市場標的")
     parser.add_argument("--daemon", action="store_true", help="本地端背景常駐即時監測模式（開盤時每 15 秒即時掃描）")
