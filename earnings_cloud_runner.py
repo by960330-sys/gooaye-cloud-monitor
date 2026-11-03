@@ -371,9 +371,11 @@ def sync_holdings_from_gmail() -> list:
 
         mail.logout()
         updated_list = list(holdings_by_symbol.values())
-        stock_state["holdings"] = updated_list
-        stock_state["last_gmail_sync"] = get_taipei_now_str()
-        save_stock_alert_state(stock_state)
+        if newly_discovered:
+            latest_stock_state = load_stock_alert_state()
+            latest_stock_state["holdings"] = updated_list
+            latest_stock_state["last_gmail_sync"] = get_taipei_now_str()
+            save_stock_alert_state(latest_stock_state)
         print(f"[GMAIL SYNC] 同步完成，當前持股清單 ({len(updated_list)} 檔): {[h['symbol'] for h in updated_list]}")
         return updated_list
     except Exception as e:

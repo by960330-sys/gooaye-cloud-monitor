@@ -4,13 +4,16 @@
 GitHub Actions 全雲端持股盤中重大波動監控系統 (Stock Volatility Cloud Monitor)
 ================================================================================
 無須開機、無須手動點擊 Google Apps Script 授權，直接由 GitHub Actions 定時執行：
-1. 【優先連結 Gmail 同步最新持股】：
+1. 【優先連結 Gmail 同步最新持股 & 已寄出警報防重驗證】：
    每次執行時，優先透過 IMAP 連線至 by960330@gmail.com，掃描最新「國泰證券 AI投資日報 (台股庫存)」、
    「美股庫存電子報」及「券商成交回報」，自動確認並更新當前實際持有的股票清單！
+   同時掃描信箱內已發送過的【持股波動預警】郵件標題，確保即使 Git 狀態同步延遲也絕不重複發信。
 2. 【監控標的】：
    預設並動態同步：台積電 (2330.TW)、聯發科 (2454.TW)、VOO、SPCX（若信箱有新增成交或庫存異動自動納入）。
-3. 【嚴格開盤時段檢測】：
-   台股開盤時段 (週一至週五 09:00~13:45 台北時間) 與美股開盤時段 (美東 09:30~16:05)。
+3. 【嚴格開盤時段檢測 & 依市場時區切分交易日】：
+   - 台股開盤時段 (週一至週五 09:00~13:45 台北時間)，以台北時間 (Asia/Taipei) 日期作為當日交易日 Key。
+   - 美股開盤時段 (美東 09:30~16:05)，以美東時間 (America/New_York) 日期作為當日交易日 Key，
+     徹底解決美股盤中跨越台北時間午夜 00:00 換日導致同一交易日重複觸發兩次 3% 警報之問題！
 4. 【三階波動預警與防洗版機制（±3% / ±6% / ±10%）】：
    - 當日漲跌幅首次達 ±3%：寄送「≥ 3% 首次達標」HTML 警報信
    - 當日漲跌幅擴大達 ±6%：寄送「≥ 6% 擴大波動」HTML 警報信
@@ -19,6 +22,7 @@ GitHub Actions 全雲端持股盤中重大波動監控系統 (Stock Volatility C
 
 import argparse
 import email
+import email.utils
 from email.header import Header, decode_header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -108,6 +112,41 @@ def get_taipei_now() -> datetime:
     return datetime.now(timezone(timedelta(hours=8)))
 
 
+def get_ny_now() -> datetime:
+    try:
+        return datetime.now(ZoneInfo("America/New_York"))
+    except Exception:
+        return datetime.now(timezone(timedelta(hours=-5)))
+
+
+def get_market_trading_date(market: str, regular_market_time: int = None, exchange_tz: str = None) -> str:
+    """
+    取得該標的所屬市場的『當日交易日 (YYYY-MM-DD)』：
+    - 台股 (TW)：使用台北時間 (Asia/Taipei) 日期
+    - 美股 (US)：使用美東時間 (America/New_York) 日期
+    重要：美股開盤時段 (美東 09:30~16:00) 對應台北時間 21:30/22:30 ~ 隔日 04:00/05:00，
+    跨過台北午夜 00:00 時仍屬同一個美股交易日，絕不可用台北日期切分，否則午夜前後會重複觸發兩次警報！
+    """
+    market = (market or "TW").upper()
+    if regular_market_time and regular_market_time > 0:
+        try:
+            if market == "TW":
+                tz = timezone(timedelta(hours=8))
+            else:
+                tz_name = exchange_tz or "America/New_York"
+                try:
+                    tz = ZoneInfo(tz_name)
+                except Exception:
+                    tz = timezone(timedelta(hours=-5))
+            return datetime.fromtimestamp(int(regular_market_time), tz).strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
+    if market == "TW":
+        return get_taipei_now().strftime("%Y-%m-%d")
+    return get_ny_now().strftime("%Y-%m-%d")
+
+
 def is_tw_market_open() -> bool:
     now_tw = get_taipei_now()
     if now_tw.weekday() >= 5:
@@ -117,10 +156,7 @@ def is_tw_market_open() -> bool:
 
 
 def is_us_market_open() -> bool:
-    try:
-        ny_now = datetime.now(ZoneInfo("America/New_York"))
-    except Exception:
-        ny_now = datetime.now(timezone(timedelta(hours=-4)))
+    ny_now = get_ny_now()
     if ny_now.weekday() >= 5:
         return False
     hm = ny_now.hour * 60 + ny_now.minute
@@ -138,6 +174,19 @@ def load_state() -> dict:
 
 
 def save_state(state: dict):
+    # 寫入前先與磁碟上最新 alerts 合併（取最大已通報波幅），避免並發覆蓋遺失紀錄
+    if STATE_FILE.exists():
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8-sig") as f:
+                disk_state = json.load(f)
+            disk_alerts = disk_state.get("alerts") or {}
+            mem_alerts = state.setdefault("alerts", {})
+            for k, v in disk_alerts.items():
+                if float(v) > float(mem_alerts.get(k, 0.0)):
+                    mem_alerts[k] = float(v)
+        except Exception:
+            pass
+
     state["last_checked_at"] = get_taipei_now().strftime("%Y-%m-%d %H:%M:%S")
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
@@ -184,6 +233,7 @@ def sync_holdings_from_gmail(state: dict) -> list:
     """
     優先連結 Gmail (by960330@gmail.com) 檢查最新國泰證券【AI投資日報】(台股庫存)、
     【美股庫存電子報】與【成交回報】，動態更新當前實際持股名單。
+    同時從信箱中已發送的【持股波動預警】郵件標題同步已通報紀錄，達成雙重防重保護。
     """
     gmail_user = os.environ.get("GMAIL_USER", "by960330@gmail.com").strip()
     gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
@@ -203,6 +253,7 @@ def sync_holdings_from_gmail(state: dict) -> list:
 
     holdings_by_symbol = {h["symbol"]: dict(h) for h in current_holdings}
     verified_from_gmail = []
+    alerts_map = state.setdefault("alerts", {})
 
     try:
         print(f"[GMAIL SYNC] 正在連結 Gmail ({gmail_user}) 檢查最新券商庫存與成交回報...")
@@ -213,7 +264,7 @@ def sync_holdings_from_gmail(state: dict) -> list:
         since_date = (get_taipei_now() - timedelta(days=7)).strftime("%d-%b-%Y")
         status, data = mail.search(None, f'(SINCE {since_date})')
         if status == "OK" and data and data[0]:
-            ids = data[0].split()[-50:]  # 檢查最近 50 封信之標題
+            ids = data[0].split()[-60:]  # 檢查最近 60 封信之標題
             _, hdr_data = mail.fetch(b",".join(ids), "(BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE)])")
 
             target_eids = []
@@ -224,6 +275,40 @@ def sync_holdings_from_gmail(state: dict) -> list:
                     subj = _decode_mime_str(msg.get("Subject", ""))
                     if any(k in subj for k in ["美股庫存電子報", "AI投資日報", "成交回報", "買賣成交"]):
                         target_eids.append((eid, subj))
+
+                    # 雙重防重保護 (Idempotency Guard)：檢查信箱中已寄出的【持股波動預警】郵件
+                    m_alert = re.search(r"【持股波動預警\s*([^】]+)】.*?\(([^)]+)\).*?([+\-]?\d+(?:\.\d+)?)%", subj)
+                    if m_alert:
+                        tier_str, sym_in_subj, pct_str = (
+                            m_alert.group(1),
+                            m_alert.group(2).strip(),
+                            m_alert.group(3),
+                        )
+                        try:
+                            abs_pct_val = abs(float(pct_str))
+                            if "10%" in tier_str:
+                                abs_pct_val = max(abs_pct_val, 10.0)
+                            elif "6%" in tier_str:
+                                abs_pct_val = max(abs_pct_val, 6.0)
+                            elif "3%" in tier_str:
+                                abs_pct_val = max(abs_pct_val, 3.0)
+
+                            date_hdr = msg.get("Date", "")
+                            dt_obj = email.utils.parsedate_to_datetime(date_hdr) if date_hdr else None
+                            if dt_obj:
+                                is_tw_sym = sym_in_subj.endswith(".TW") or sym_in_subj.endswith(".TWO")
+                                if is_tw_sym:
+                                    mkt_dt = dt_obj.astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
+                                else:
+                                    try:
+                                        mkt_dt = dt_obj.astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+                                    except Exception:
+                                        mkt_dt = dt_obj.astimezone(timezone(timedelta(hours=-5))).strftime("%Y-%m-%d")
+                                r_key = f"{sym_in_subj}:{mkt_dt}"
+                                if abs_pct_val > float(alerts_map.get(r_key, 0.0)):
+                                    alerts_map[r_key] = round(abs_pct_val, 2)
+                        except Exception:
+                            pass
 
             for eid, subj in target_eids[-6:]:
                 _, msg_data = mail.fetch(eid, "(RFC822)")
@@ -295,7 +380,7 @@ def sync_holdings_from_gmail(state: dict) -> list:
         return current_holdings
 
 
-def fetch_quote_yahoo(symbol: str) -> dict:
+def fetch_quote_yahoo(symbol: str, market: str = None) -> dict:
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(symbol)}?interval=1d"
     req = urllib.request.Request(
         url,
@@ -314,6 +399,11 @@ def fetch_quote_yahoo(symbol: str) -> dict:
     if price is None or prev_close is None or prev_close <= 0:
         raise RuntimeError(f"{symbol} 缺少有效報價 (price={price}, prev_close={prev_close})")
 
+    inferred_market = market or ("TW" if (symbol.endswith(".TW") or symbol.endswith(".TWO")) else "US")
+    reg_time = meta.get("regularMarketTime")
+    exch_tz = meta.get("exchangeTimezoneName")
+    trading_date = get_market_trading_date(inferred_market, reg_time, exch_tz)
+
     change_pct = ((price - prev_close) / prev_close) * 100.0
     return {
         "symbol": symbol,
@@ -322,6 +412,8 @@ def fetch_quote_yahoo(symbol: str) -> dict:
         "prev_close": float(prev_close),
         "change_pct": float(change_pct),
         "abs_change_pct": abs(float(change_pct)),
+        "trading_date": trading_date,
+        "regular_market_time": reg_time,
     }
 
 
@@ -342,6 +434,8 @@ def send_alert_email(stock: dict, quote: dict, tier_label: str):
     sign = "+" if is_up else ""
     color = "#d93025" if is_up else "#188038"
     now_str = get_taipei_now().strftime("%Y-%m-%d %H:%M:%S")
+    mkt_tz_label = "台北交易日" if stock.get("market") == "TW" else "美東交易日"
+    trading_date_str = f"{quote.get('trading_date', '')} ({mkt_tz_label})"
 
     subject = f"【持股波動預警 {tier_label}】{stock['name']} ({stock['symbol']}) {direction} {sign}{quote['change_pct']:.2f}%"
 
@@ -367,13 +461,17 @@ def send_alert_email(stock: dict, quote: dict, tier_label: str):
               {direction} {sign}{quote['change_pct']:.2f}%
             </td>
           </tr>
+          <tr style="border-bottom: 1px solid #f0f0f0;">
+            <td style="padding: 10px 0; color: #666;">所屬交易日：</td>
+            <td style="padding: 10px 0; color: #444;">{trading_date_str}</td>
+          </tr>
           <tr>
             <td style="padding: 10px 0; color: #666;">通報時間：</td>
             <td style="padding: 10px 0; color: #444;">{now_str} (Asia/Taipei)</td>
           </tr>
         </table>
         <div style="margin-top: 20px; padding: 12px; background-color: #f8f9fa; border-radius: 6px; font-size: 13px; color: #555;">
-          💡 <strong>GitHub Cloud 全自動監控</strong>：當日漲跌幅首次達 <strong>±3%</strong>、擴大達 <strong>±6%</strong>、或劇震達 <strong>±10%</strong> 時，直接由雲端寄送警報信至 {gmail_user}。
+          💡 <strong>GitHub Cloud 全自動監控</strong>：以該市場交易日（台股依台北日期、美股依美東日期）為基準，當日漲跌幅首次達 <strong>±3%</strong>、擴大達 <strong>±6%</strong>、或劇震達 <strong>±10%</strong> 時各推播一次至 {gmail_user}。
         </div>
       </div>
     </div>
@@ -401,14 +499,17 @@ def main():
 
     state = load_state()
     alerts_map = state.setdefault("alerts", {})
-    today_str = get_taipei_now().strftime("%Y-%m-%d")
 
-    # 第一步：優先連結 Gmail 更新最新持股名單
+    # 第一步：優先連結 Gmail 更新最新持股名單，並同步已寄出的波動預警紀錄
     holdings = sync_holdings_from_gmail(state)
 
     tw_open = is_tw_market_open()
     us_open = is_us_market_open()
-    print(f"[{get_taipei_now().strftime('%Y-%m-%d %H:%M:%S')}] 啟動 GitHub 雲端持股波動監測 (±3%/±6%/±10%) | 台股開盤={tw_open} | 美股開盤={us_open} | force={args.force}")
+    print(
+        f"[{get_taipei_now().strftime('%Y-%m-%d %H:%M:%S')}] 啟動 GitHub 雲端持股波動監測 (±3%/±6%/±10%) | "
+        f"台股開盤={tw_open} (交易日:{get_market_trading_date('TW')}) | "
+        f"美股開盤={us_open} (美東交易日:{get_market_trading_date('US')}) | force={args.force}"
+    )
 
     for stock in holdings:
         market = stock["market"]
@@ -418,14 +519,16 @@ def main():
             continue
 
         try:
-            quote = fetch_quote_yahoo(stock["symbol"])
+            quote = fetch_quote_yahoo(stock["symbol"], market=market)
             abs_pct = quote["abs_change_pct"]
-            rec_key = f"{stock['symbol']}:{today_str}"
+            trading_date = quote["trading_date"]
+            rec_key = f"{stock['symbol']}:{trading_date}"
             last_notified_abs = float(alerts_map.get(rec_key, 0.0))
 
             print(
-                f"[QUOTE] {stock['name']} ({stock['symbol']}): 現價={quote['price']} | 昨收={quote['prev_close']} | "
-                f"漲跌={quote['change_pct']:+.2f}% | 今日已通報最高波幅={last_notified_abs:.2f}%"
+                f"[QUOTE] {stock['name']} ({stock['symbol']}) [交易日:{trading_date}]: "
+                f"現價={quote['price']} | 昨收={quote['prev_close']} | "
+                f"漲跌={quote['change_pct']:+.2f}% | 當日已通報最高波幅={last_notified_abs:.2f}%"
             )
 
             should_send = False
