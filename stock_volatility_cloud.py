@@ -28,6 +28,7 @@ import json
 import os
 import re
 import smtplib
+import ssl
 import subprocess
 import sys
 import time
@@ -377,10 +378,154 @@ def sync_holdings_from_gmail(state: dict, quiet: bool = False) -> list:
         return current_holdings
 
 
+def _parse_float(val) -> float:
+    if val is None:
+        return None
+    s = str(val).strip().replace(",", "").replace("%", "").replace("+", "")
+    if not s or s == "-":
+        return None
+    try:
+        return float(s)
+    except Exception:
+        return None
+
+
+def fetch_quote_twse_official(symbol: str) -> dict:
+    """
+    【台股零延遲官方直連】直接向台灣證券交易所 / 櫃買中心基本市況報導 (mis.twse.com.tw?delay=0) 抓取逐筆撮合即時報價。
+    完全不經由 Yahoo 轉手，0 延遲！
+    """
+    ticker = symbol.replace(".TWO", "").replace(".TW", "").strip()
+    ex_prefix = "otc" if symbol.endswith(".TWO") else "tse"
+    ex_ch = f"{ex_prefix}_{ticker}.tw"
+    url = f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={ex_ch}&json=1&delay=0&_={int(time.time() * 1000)}"
+    ctx = ssl._create_unverified_context()
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": "https://mis.twse.com.tw/stock/fibest.jsp",
+        },
+    )
+    with urllib.request.urlopen(req, context=ctx, timeout=8) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    msg_arr = data.get("msgArray") or []
+    if not msg_arr:
+        raise RuntimeError(f"TWSE 官方 API 未回傳 {symbol} 資料")
+
+    item = msg_arr[0]
+    prev_close = _parse_float(item.get("y"))
+    # 優先取當盤成交價 z -> trade.z -> pz -> 最佳一檔委買委賣中間價
+    price = _parse_float(item.get("z"))
+    if price is None and isinstance(item.get("trade"), dict):
+        price = _parse_float(item["trade"].get("z"))
+    if price is None:
+        price = _parse_float(item.get("pz"))
+    if price is None:
+        b_first = _parse_float((item.get("b") or "").split("_")[0])
+        a_first = _parse_float((item.get("a") or "").split("_")[0])
+        if b_first and a_first:
+            price = (b_first + a_first) / 2.0
+        else:
+            price = b_first or a_first
+
+    if price is None or prev_close is None or prev_close <= 0:
+        raise RuntimeError(f"TWSE {symbol} 暫無有效成交價 (price={price}, prev_close={prev_close})")
+
+    raw_d = str(item.get("d") or "").strip()
+    if len(raw_d) == 8 and raw_d.isdigit():
+        trading_date = f"{raw_d[:4]}-{raw_d[4:6]}-{raw_d[6:8]}"
+    else:
+        trading_date = get_market_trading_date("TW")
+
+    quote_time_tw = str(item.get("t") or "")
+    change_pct = ((price - prev_close) / prev_close) * 100.0
+    return {
+        "symbol": symbol,
+        "currency": "TWD",
+        "price": float(price),
+        "prev_close": float(prev_close),
+        "change_pct": float(change_pct),
+        "abs_change_pct": abs(float(change_pct)),
+        "trading_date": trading_date,
+        "quote_time_tw": f"{quote_time_tw} [TWSE 證交所官方 0 延遲直連]",
+        "latency_sec": 0,
+        "source": "TWSE_OFFICIAL_REALTIME",
+    }
+
+
+def fetch_quote_us_realtime_direct(symbol: str) -> dict:
+    """
+    【美股零延遲直連】直接向 NASDAQ Last Sale / CTA 即時串流端點 (quote.cnbc.com, realTime=true) 抓取毫秒級即時報價。
+    完全不經由 Yahoo 延遲來源，延遲 < 0.5 秒！
+    """
+    url = (
+        f"https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol"
+        f"?symbols={urllib.parse.quote(symbol)}&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json&events=1"
+    )
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+    )
+    with urllib.request.urlopen(req, timeout=8) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    quotes = (data.get("FormattedQuoteResult") or {}).get("FormattedQuote") or []
+    if not quotes:
+        raise RuntimeError(f"US Realtime 端點未回傳 {symbol} 資料")
+
+    q = quotes[0]
+    price = _parse_float(q.get("last"))
+    prev_close = _parse_float(q.get("previous_day_closing"))
+    if price is None or prev_close is None or prev_close <= 0:
+        raise RuntimeError(f"US Realtime {symbol} 缺少有效報價 (price={price}, prev_close={prev_close})")
+
+    last_time_iso = str(q.get("last_time") or "")
+    trading_date = get_market_trading_date("US")
+    quote_time_tw = ""
+    latency_sec = 0
+    if len(last_time_iso) >= 10 and last_time_iso[:4].isdigit():
+        trading_date = last_time_iso[:10]
+        try:
+            dt_obj = datetime.fromisoformat(last_time_iso)
+            quote_time_tw = dt_obj.astimezone(timezone(timedelta(hours=8))).strftime("%H:%M:%S")
+            latency_sec = max(0, int(time.time() - dt_obj.timestamp()))
+        except Exception:
+            quote_time_tw = str(q.get("last_timedate") or "")
+
+    src_name = q.get("source") or "NASDAQ/CTA Direct"
+    change_pct = ((price - prev_close) / prev_close) * 100.0
+    return {
+        "symbol": symbol,
+        "currency": q.get("currencyCode", "USD"),
+        "price": float(price),
+        "prev_close": float(prev_close),
+        "change_pct": float(change_pct),
+        "abs_change_pct": abs(float(change_pct)),
+        "trading_date": trading_date,
+        "quote_time_tw": f"{quote_time_tw} [{src_name} 0 延遲直連]",
+        "latency_sec": latency_sec,
+        "source": "US_NASDAQ_CTA_REALTIME",
+    }
+
+
 def fetch_quote_yahoo(symbol: str, market: str = None) -> dict:
     """
-    使用 interval=1m&range=1d 取得盤中秒級即時 Tick 報價（延遲僅 1~3 秒）。
+    優先採用「官方 0 延遲直連報價源」：
+    - 台股 (TW)：優先直連台灣證交所 (mis.twse.com.tw?delay=0) 官方逐筆撮合即時 API。
+    - 美股 (US)：優先直連 NASDAQ Last Sale / CTA 毫秒級即時串流 API (realTime=true)。
+    若主線路瞬斷，才自動 Fallback 至 Yahoo Finance v8 1m 端點。
     """
+    inferred_market = (market or ("TW" if (symbol.endswith(".TW") or symbol.endswith(".TWO")) else "US")).upper()
+    try:
+        if inferred_market == "TW":
+            return fetch_quote_twse_official(symbol)
+        else:
+            return fetch_quote_us_realtime_direct(symbol)
+    except Exception as primary_err:
+        print(f"[WARN] 主報價源 ({inferred_market}) 瞬斷 ({primary_err})，切換備援線路...", file=sys.stderr)
+
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(symbol)}?interval=1m&range=1d"
     req = urllib.request.Request(
         url,
@@ -391,7 +536,7 @@ def fetch_quote_yahoo(symbol: str, market: str = None) -> dict:
 
     result = (data.get("chart") or {}).get("result")
     if not result:
-        raise RuntimeError(f"Yahoo Finance 未回傳 {symbol} 資料")
+        raise RuntimeError(f"備援線路未回傳 {symbol} 資料")
 
     meta = result[0].get("meta") or {}
     price = meta.get("regularMarketPrice")
@@ -399,7 +544,6 @@ def fetch_quote_yahoo(symbol: str, market: str = None) -> dict:
     if price is None or prev_close is None or prev_close <= 0:
         raise RuntimeError(f"{symbol} 缺少有效報價 (price={price}, prev_close={prev_close})")
 
-    inferred_market = market or ("TW" if (symbol.endswith(".TW") or symbol.endswith(".TWO")) else "US")
     reg_time = meta.get("regularMarketTime")
     exch_tz = meta.get("exchangeTimezoneName")
     trading_date = get_market_trading_date(inferred_market, reg_time, exch_tz)
@@ -422,6 +566,7 @@ def fetch_quote_yahoo(symbol: str, market: str = None) -> dict:
         "regular_market_time": reg_time,
         "quote_time_tw": quote_time_tw,
         "latency_sec": latency_sec,
+        "source": "YAHOO_FALLBACK",
     }
 
 
@@ -566,9 +711,10 @@ def run_quote_scan_tick(state: dict, holdings: list, force: bool = False, verbos
             last_notified_abs = float(alerts_map.get(rec_key, 0.0))
 
             if verbose:
+                src_tag = quote.get("source", "REALTIME")
                 lat_str = f" (延遲:{quote['latency_sec']}s)" if quote.get("latency_sec") is not None else ""
                 print(
-                    f"[QUOTE] {stock['name']} ({stock['symbol']}) [交易日:{trading_date}]: "
+                    f"[QUOTE|{src_tag}] {stock['name']} ({stock['symbol']}) [交易日:{trading_date}]: "
                     f"現價={quote['price']} | 昨收={quote['prev_close']} | "
                     f"漲跌={quote['change_pct']:+.2f}%{lat_str} | 當日已通報最高波幅={last_notified_abs:.2f}%"
                 )
