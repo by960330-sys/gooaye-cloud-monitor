@@ -2,10 +2,10 @@ name: Stock Portfolio Volatility Cloud Monitor (3% / 6% / 10%)
 
 on:
   schedule:
-    # 台股開盤時段：週一至週五 台北時間 09:00 ~ 13:45 (對應 UTC 01:00 ~ 05:45) 每 15 分鐘執行一次
-    - cron: '*/15 1-5 * * 1-5'
-    # 美股開盤時段：週一至週五 美東時間 09:30 ~ 16:00 (對應 UTC 13:30 ~ 21:00) 每 15 分鐘執行一次
-    - cron: '*/15 13-21 * * 1-5'
+    # 台股開盤時段：週一至週五 台北時間 09:00 ~ 13:45 (對應 UTC 01:00 ~ 05:45) 每 5 分鐘啟動並於容器內每 15 秒連續即時監測
+    - cron: '*/5 1-5 * * 1-5'
+    # 美股開盤時段：週一至週五 美東時間 09:30 ~ 16:00 (對應 UTC 13:30 ~ 21:00) 每 5 分鐘啟動並於容器內每 15 秒連續即時監測
+    - cron: '*/5 13-21 * * 1-5'
   workflow_dispatch:
     inputs:
       force_check:
@@ -14,7 +14,7 @@ on:
         default: 'true'
 
 concurrency:
-  group: portfolio-monitor-state-sync
+  group: portfolio-volatility-realtime
   cancel-in-progress: false
 
 permissions:
@@ -23,18 +23,23 @@ permissions:
 jobs:
   stock-volatility-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Configure Git identity for instant alert sync
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Run Stock Volatility Check & Gmail Holdings Sync
+      - name: Run Real-Time Stock Volatility Monitor (15s Tick Polling)
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -42,7 +47,7 @@ jobs:
           if [ "${{ github.event.inputs.force_check }}" = "true" ]; then
             python stock_volatility_cloud.py --force
           else
-            python stock_volatility_cloud.py
+            python stock_volatility_cloud.py --watch-seconds 255 --interval 15
           fi
 
       - name: Auto-Trigger Gemini 4 Argon Earnings Analysis if New Holding Detected
@@ -71,7 +76,5 @@ jobs:
 
       - name: Commit updated state files
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add stock_alert_state.json earnings_monitor_state.json
           git diff --staged --quiet || (git commit -m "chore: update portfolio monitor states" && git pull --rebase origin main && git push)
