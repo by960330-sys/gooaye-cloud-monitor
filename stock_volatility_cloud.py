@@ -336,6 +336,10 @@ def _sync_holdings_from_gmail_impl(state: dict, quiet: bool = False) -> list:
                         except Exception:
                             pass
 
+            latest_us_inventory_syms = None
+            latest_tw_inventory_syms = None
+            recent_bought_syms = set()
+
             for eid, subj in target_eids[-6:]:
                 _, msg_data = mail.fetch(eid, "(RFC822)")
                 if not msg_data or not isinstance(msg_data[0], tuple):
@@ -344,10 +348,12 @@ def _sync_holdings_from_gmail_impl(state: dict, quiet: bool = False) -> list:
                 text = _extract_email_text(msg)
 
                 if "美股庫存電子報" in subj:
+                    this_us_syms = set()
                     for m in re.finditer(r"\b([A-Z]{2,5})\s+([A-Za-z0-9&\.\-\s]{3,35}?)\s+\d+\.\d+\s+[\-\d\.]+\(", text):
                         us_sym = m.group(1).strip()
                         us_name = m.group(2).strip()
                         if us_sym not in ("USD", "ETF", "NEW", "TOP"):
+                            this_us_syms.add(us_sym)
                             if us_sym not in verified_from_gmail:
                                 verified_from_gmail.append(us_sym)
                             if us_sym not in holdings_by_symbol:
@@ -359,10 +365,14 @@ def _sync_holdings_from_gmail_impl(state: dict, quiet: bool = False) -> list:
                                     "shares": 1,
                                 }
                                 print(f"[GMAIL SYNC] 從美股庫存電子報新增美股標的: {us_sym} ({us_name})")
+                    if this_us_syms:
+                        latest_us_inventory_syms = this_us_syms
 
                 if "AI投資日報" in subj:
+                    this_tw_syms = set()
                     for tw_name, (tw_sym, tw_ticker) in KNOWN_TW_NAME_TO_SYMBOL.items():
                         if f"{tw_name} " in text:
+                            this_tw_syms.add(tw_sym)
                             if tw_sym not in verified_from_gmail:
                                 verified_from_gmail.append(tw_sym)
                             if tw_sym not in holdings_by_symbol:
@@ -374,12 +384,15 @@ def _sync_holdings_from_gmail_impl(state: dict, quiet: bool = False) -> list:
                                     "shares": 1,
                                 }
                                 print(f"[GMAIL SYNC] 從 AI投資日報新增台股庫存: {tw_name} ({tw_sym})")
+                    if this_tw_syms:
+                        latest_tw_inventory_syms = this_tw_syms
 
                 if "成交回報" in subj:
                     for m in re.finditer(r"(買進|賣出)[\s:：]*([0-9]{4,5})\s*([\u4e00-\u9fa5A-Za-z0-9]+)?", text):
                         act, tk, nm = m.group(1), m.group(2), (m.group(3) or tk).strip()
                         sym = f"{tk}.TW"
                         if "買" in act:
+                            recent_bought_syms.add(sym)
                             if sym not in verified_from_gmail:
                                 verified_from_gmail.append(sym)
                             if sym not in holdings_by_symbol:
@@ -391,6 +404,18 @@ def _sync_holdings_from_gmail_impl(state: dict, quiet: bool = False) -> list:
                                     "shares": 1,
                                 }
                                 print(f"[GMAIL SYNC] 從成交回報偵測到新買進台股: {nm} ({sym})")
+
+            # 雙向同步：若最新一期庫存電子報中某檔舊持股已消失（代表已全數賣出出清），自動從監控名單移除
+            for sym in list(holdings_by_symbol.keys()):
+                h_mkt = holdings_by_symbol[sym].get("market", "TW")
+                if h_mkt == "US" and latest_us_inventory_syms is not None:
+                    if sym not in latest_us_inventory_syms and sym not in recent_bought_syms:
+                        removed = holdings_by_symbol.pop(sym)
+                        print(f"[GMAIL SYNC] 偵測到美股已出清，自動從監控清單移除: {removed.get('name')} ({sym})")
+                elif h_mkt == "TW" and latest_tw_inventory_syms is not None:
+                    if sym not in latest_tw_inventory_syms and sym not in recent_bought_syms:
+                        removed = holdings_by_symbol.pop(sym)
+                        print(f"[GMAIL SYNC] 偵測到台股已出清，自動從監控清單移除: {removed.get('name')} ({sym})")
 
         try:
             mail.logout()
