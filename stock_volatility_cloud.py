@@ -253,27 +253,35 @@ def _extract_email_text(msg) -> str:
     return re.sub(r"\s+", " ", body)
 
 
-def _sync_holdings_from_gmail_impl(state: dict, quiet: bool = False) -> list:
-    """
-    優先連結 Gmail (by960330@gmail.com) 檢查最新國泰證券【AI投資日報】(台股庫存)、
-    【美股庫存電子報】與【成交回報】，動態更新當前實際持股名單。
-    同時從信箱中已發送的【持股波動預警】郵件標題同步已通報紀錄，達成雙重防重保護。
-    """
-    gmail_user = os.environ.get("GMAIL_USER", "by960330@gmail.com").strip()
+def _get_gmail_credentials() -> tuple:
+    gmail_user = os.environ.get("GMAIL_USER", "").strip()
     gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
-    if not gmail_pass:
+    if not gmail_user or not gmail_pass:
         local_cfg = Path(r"C:\Users\user\.gemini\config\skills\portfolio-monitor\config.json")
         if local_cfg.exists():
             try:
                 cfg_data = json.loads(local_cfg.read_text(encoding="utf-8"))
-                gmail_pass = cfg_data.get("email", {}).get("sender_password", "")
+                if not gmail_user:
+                    gmail_user = cfg_data.get("email", {}).get("sender_email", "") or cfg_data.get("gmail", {}).get("email", "")
+                if not gmail_pass:
+                    gmail_pass = cfg_data.get("email", {}).get("sender_password", "") or cfg_data.get("gmail", {}).get("app_password", "")
             except Exception:
                 pass
+    return gmail_user.strip(), gmail_pass.strip()
+
+
+def _sync_holdings_from_gmail_impl(state: dict, quiet: bool = False) -> list:
+    """
+    優先連結 Gmail 檢查最新國泰證券【AI投資日報】(台股庫存)、
+    【美股庫存電子報】與【成交回報】，動態更新當前實際持股名單。
+    同時從信箱中已發送的【持股波動預警】郵件標題同步已通報紀錄，達成雙重防重保護。
+    """
+    gmail_user, gmail_pass = _get_gmail_credentials()
 
     current_holdings = state.get("holdings") or list(DEFAULT_HOLDINGS)
-    if not gmail_pass:
+    if not gmail_user or not gmail_pass:
         if not quiet:
-            print("[WARN] 未設定 GMAIL_APP_PASSWORD，使用預設持股清單。")
+            print("[WARN] 未設定 GMAIL_USER / GMAIL_APP_PASSWORD，使用既有持股清單。")
         return current_holdings
 
     holdings_by_symbol = {h["symbol"]: dict(h) for h in current_holdings}
@@ -282,7 +290,7 @@ def _sync_holdings_from_gmail_impl(state: dict, quiet: bool = False) -> list:
 
     try:
         if not quiet:
-            print(f"[GMAIL SYNC] 正在連結 Gmail ({gmail_user}) 檢查最新券商庫存與已發送預警紀錄...")
+            print("[GMAIL SYNC] 正在連結 Gmail 檢查最新券商庫存與已發送預警紀錄...")
         mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=10)
         mail.login(gmail_user, gmail_pass)
         mail.select("INBOX")
@@ -662,16 +670,9 @@ def send_windows_toast_if_local(title: str, message: str):
 
 
 def send_alert_email(stock: dict, quote: dict, tier_label: str):
-    gmail_user = os.environ.get("GMAIL_USER", "by960330@gmail.com").strip()
-    gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
-    if not gmail_pass:
-        local_cfg = Path(r"C:\Users\user\.gemini\config\skills\portfolio-monitor\config.json")
-        if local_cfg.exists():
-            cfg_data = json.loads(local_cfg.read_text(encoding="utf-8"))
-            gmail_pass = cfg_data.get("email", {}).get("sender_password", "")
-
-    if not gmail_pass:
-        raise RuntimeError("未設定 GMAIL_APP_PASSWORD 環境變數，無法發送預警信！")
+    gmail_user, gmail_pass = _get_gmail_credentials()
+    if not gmail_user or not gmail_pass:
+        raise RuntimeError("未設定 GMAIL_USER / GMAIL_APP_PASSWORD 環境變數，無法發送預警信！")
 
     is_up = quote["change_pct"] >= 0
     direction = "📈 盤中大漲" if is_up else "📉 盤中大跌"

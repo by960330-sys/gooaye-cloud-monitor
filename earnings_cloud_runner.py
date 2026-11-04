@@ -5,7 +5,7 @@ GitHub Actions 全雲端持股財報與法說會原音深度拆解系統 (Portfo
 ================================================================================================
 無須開機、無須開啟本地端 Antigravity，直接由 GitHub Actions 雲端全自動運行：
 1. 【優先連結 Gmail 動態同步持股】：
-   自動透過 IMAP 掃描 by960330@gmail.com 最新「國泰證券 AI投資日報 (台股庫存)」、
+   自動透過 IMAP 掃描最新「國泰證券 AI投資日報 (台股庫存)」、
    「美股庫存電子報」及「券商成交回報」，掌握最新台美股持有清單。
 2. 【雙重自動觸發機制（零 Token 閒置巡檢，有事件才啟動 Gemini 4 Argon）】：
    - 觸發條件 A（新增持股標的）：當偵測到信箱庫存或成交回報出現「新買進／新增持有之股票標的」時，
@@ -20,7 +20,7 @@ GitHub Actions 全雲端持股財報與法說會原音深度拆解系統 (Portfo
    - 從「經營層業績數據、未來產業與 CapEx 指引、法人分析師尖銳問答、AI 深度投資觀點與實戰操作建議」四大維度
      產出機構買方（Buy-Side）研究員等級深度分析報告。
 5. 【雙通道雲端自動交付】：
-   - 自動透過 Gmail SMTP 寄送排版精美的完整 HTML 深度分析報告至 by960330@gmail.com。
+   - 自動透過 Gmail SMTP 寄送排版精美的完整 HTML 深度分析報告至使用者信箱。
    - 自動歸檔 Markdown 報告至 Google Drive「證券操作紀錄/持股財報與法說會深度分析/{代號}_{名稱}」資料夾。
 """
 
@@ -254,32 +254,35 @@ def _extract_email_text(msg) -> str:
 
 def sync_holdings_from_gmail() -> list:
     """
-    連結 Gmail (by960330@gmail.com) 掃描最新國泰證券【AI投資日報】、【美股庫存電子報】與【成交回報】，
+    連結 Gmail 掃描最新國泰證券【AI投資日報】、【美股庫存電子報】與【成交回報】，
     同步更新至 stock_alert_state.json 並回傳最新持股清單。
     """
     stock_state = load_stock_alert_state()
     current_holdings = stock_state.get("holdings") or list(DEFAULT_HOLDINGS)
 
-    gmail_user = os.environ.get("GMAIL_USER", "by960330@gmail.com").strip()
+    gmail_user = os.environ.get("GMAIL_USER", "").strip()
     gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
-    if not gmail_pass:
+    if not gmail_user or not gmail_pass:
         local_cfg = Path(r"C:\Users\user\.gemini\config\skills\portfolio-monitor\config.json")
         if local_cfg.exists():
             try:
                 cfg_data = json.loads(local_cfg.read_text(encoding="utf-8"))
-                gmail_pass = cfg_data.get("email", {}).get("sender_password", "") or cfg_data.get("gmail", {}).get("app_password", "")
+                if not gmail_user:
+                    gmail_user = cfg_data.get("email", {}).get("sender_email", "") or cfg_data.get("gmail", {}).get("email", "")
+                if not gmail_pass:
+                    gmail_pass = cfg_data.get("email", {}).get("sender_password", "") or cfg_data.get("gmail", {}).get("app_password", "")
             except Exception:
                 pass
 
-    if not gmail_pass:
-        print("[WARN] 未設定 GMAIL_APP_PASSWORD，使用既有持股清單。")
+    if not gmail_user or not gmail_pass:
+        print("[WARN] 未設定 GMAIL_USER / GMAIL_APP_PASSWORD，使用既有持股清單。")
         return current_holdings
 
     holdings_by_symbol = {h["symbol"]: dict(h) for h in current_holdings}
     newly_discovered = []
 
     try:
-        print(f"[GMAIL SYNC] 正在連線 Gmail ({gmail_user}) 掃描最新庫存與成交回報...")
+        print("[GMAIL SYNC] 正在連線 Gmail 掃描最新庫存與成交回報...")
         mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
         mail.login(gmail_user, gmail_pass)
         mail.select("INBOX")
@@ -909,19 +912,22 @@ def archive_report_to_gdrive(stock: dict, quarter_label: str, report_path: Path)
 
 
 def send_earnings_report_email(stock: dict, quarter_label: str, trigger_reason: str, report_md: str, drive_url: str):
-    gmail_user = os.environ.get("GMAIL_USER", "by960330@gmail.com").strip()
+    gmail_user = os.environ.get("GMAIL_USER", "").strip()
     gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "").strip()
-    if not gmail_pass:
+    if not gmail_user or not gmail_pass:
         local_cfg = Path(r"C:\Users\user\.gemini\config\skills\portfolio-monitor\config.json")
         if local_cfg.exists():
             try:
                 cfg_data = json.loads(local_cfg.read_text(encoding="utf-8"))
-                gmail_pass = cfg_data.get("email", {}).get("sender_password", "") or cfg_data.get("gmail", {}).get("app_password", "")
+                if not gmail_user:
+                    gmail_user = cfg_data.get("email", {}).get("sender_email", "") or cfg_data.get("gmail", {}).get("email", "")
+                if not gmail_pass:
+                    gmail_pass = cfg_data.get("email", {}).get("sender_password", "") or cfg_data.get("gmail", {}).get("app_password", "")
             except Exception:
                 pass
 
-    if not gmail_pass:
-        print("[WARN] 未設定 GMAIL_APP_PASSWORD，跳過寄送 Email。")
+    if not gmail_user or not gmail_pass:
+        print("[WARN] 未設定 GMAIL_USER / GMAIL_APP_PASSWORD，跳過寄送 Email。")
         return
 
     subject = f"【持股法說會與財報深度分析】{stock['name']} ({stock['symbol']}) - {quarter_label} 完整指引與投資觀點"
