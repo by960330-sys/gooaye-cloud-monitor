@@ -2,16 +2,16 @@ name: Stock Portfolio Volatility Cloud Monitor (3% / 6% / 10%)
 
 on:
   schedule:
-    # 台股開盤時段：週一至週五 台北時間 09:00 ~ 13:45 (對應 UTC 01:00 ~ 05:45) 每 5 分鐘啟動並於容器內每 15 秒連續即時監測
-    - cron: '*/5 1-5 * * 1-5'
-    # 美股開盤時段：週一至週五 美東時間 09:30 ~ 16:00 (對應 UTC 13:30 ~ 21:00) 每 5 分鐘啟動並於容器內每 15 秒連續即時監測
-    - cron: '*/5 13-21 * * 1-5'
+    # 台股盤前待命與開盤時段：週一至週五 台北時間 08:00 ~ 13:45 (對應 UTC 00:00 ~ 05:45)
+    - cron: '*/5 0-5 * * 1-5'
+    # 美股盤前待命與開盤時段：週一至週五 美東時間 08:30 ~ 16:05 (對應 UTC 12:30 ~ 21:00)
+    - cron: '*/5 12-21 * * 1-5'
   workflow_dispatch:
     inputs:
       force_check:
         description: '是否忽略開盤時間強制檢查全部持股 (true/false)'
         required: false
-        default: 'true'
+        default: 'false'
 
 concurrency:
   group: portfolio-volatility-realtime
@@ -19,11 +19,12 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   stock-volatility-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 65
+    timeout-minutes: 330
 
     steps:
       - name: Checkout repository
@@ -39,7 +40,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Run Real-Time Stock Volatility Monitor (10s Continuous Polling for 55m)
+      - name: Run Full-Session Real-Time Stock Volatility Monitor (10s Continuous Polling)
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -47,7 +48,8 @@ jobs:
           if [ "${{ github.event.inputs.force_check }}" = "true" ]; then
             python stock_volatility_cloud.py --force
           else
-            python stock_volatility_cloud.py --watch-seconds 3300 --interval 10
+            # 單一雲端容器最長連續駐留 16800 秒 (4 小時 40 分鐘，足以單次完整涵蓋台股全場 09:00~13:35，收盤即刻自動結束)
+            python stock_volatility_cloud.py --watch-seconds 16800 --interval 10
           fi
 
       - name: Auto-Trigger Gemini 4 Argon Earnings Analysis if New Holding Detected
@@ -78,3 +80,21 @@ jobs:
         run: |
           git add stock_alert_state.json earnings_monitor_state.json
           git diff --staged --quiet || (git commit -m "chore: update portfolio monitor states" && git pull --rebase origin main && git push)
+
+      - name: Self-Relay Next Cloud Container if Market Still Open (Zero-Gap Handover)
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          STILL_OPEN=$(python -c "
+          import stock_volatility_cloud as s
+          print('YES' if (s.is_tw_market_open() or s.is_us_market_open() or s.is_pre_market_standby()) else 'NO')
+          ")
+          if [ "$STILL_OPEN" = "YES" ] && [ "${{ github.event.inputs.force_check }}" != "true" ]; then
+            echo "🔄 市場仍處於開盤或待命時段，立即透過 GitHub API 無縫接力啟動下一棒雲端即時監控容器..."
+            curl -s -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/stock_volatility_monitor.yml/dispatches" \
+              -d '{"ref":"main","inputs":{"force_check":"false"}}' || true
+          fi

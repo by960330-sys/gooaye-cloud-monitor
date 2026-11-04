@@ -166,6 +166,28 @@ def is_us_market_open() -> bool:
     return (9 * 60 + 30) <= hm <= (16 * 60 + 5)
 
 
+def is_pre_market_standby() -> bool:
+    """
+    判斷是否處於開盤前 60 分鐘內的『盤前待命時段』：
+    - 台股盤前待命：週一至週五 台北時間 08:00 ~ 09:00
+    - 美股盤前待命：週一至週五 美東時間 08:30 ~ 09:30
+    避免 GitHub Actions 提早於開盤前喚醒容器時直接退出，確保開盤第一秒 (09:00:00 / 09:30:00) 即刻無縫盯盤！
+    """
+    now_tw = get_taipei_now()
+    if now_tw.weekday() < 5:
+        hm_tw = now_tw.hour * 60 + now_tw.minute
+        if (8 * 60) <= hm_tw < (9 * 60):
+            return True
+
+    ny_now = get_ny_now()
+    if ny_now.weekday() < 5:
+        hm_ny = ny_now.hour * 60 + ny_now.minute
+        if (8 * 60 + 30) <= hm_ny < (9 * 60 + 30):
+            return True
+
+    return False
+
+
 def load_state() -> dict:
     if STATE_FILE.exists():
         try:
@@ -836,19 +858,35 @@ def main():
                 print(f"[ERROR] Daemon loop error: {e}", file=sys.stderr)
             time.sleep(max(5, args.interval))
 
-    # 模式 B：GitHub Actions 雲端連續高頻監測模式 (--watch-seconds > 0)
+    # 模式 B：GitHub Actions 雲端全場連續高頻監測模式 (--watch-seconds > 0)
     elif args.watch_seconds > 0:
         start_ts = time.time()
         tick_count = 0
+        standby_logged = False
         while True:
             tw_open = is_tw_market_open()
             us_open = is_us_market_open()
             if not tw_open and not us_open and not args.force:
-                print("[SKIP] 目前非台股與美股開盤時段，結束本次巡檢。")
+                if is_pre_market_standby():
+                    if not standby_logged:
+                        print(f"[{get_taipei_now().strftime('%H:%M:%S')}] [STANDBY] 處於開盤前待命時段，等待開盤鐘響即刻啟動每 {args.interval}s 零延遲監控...")
+                        standby_logged = True
+                    if time.time() - start_ts + 10 > args.watch_seconds:
+                        break
+                    time.sleep(10)
+                    continue
+                print(f"[{get_taipei_now().strftime('%H:%M:%S')}] [DONE] 目前非開盤或盤前待命時段，結束本次巡檢。")
                 break
 
+            # 雲端長時運行期間，每 20 分鐘非阻塞同步一次 Gmail 最新持股與已寄信狀態（12 秒硬超時保護）
+            if time.time() - last_gmail_sync_ts >= 1200:
+                state = load_state()
+                holdings = sync_holdings_from_gmail(state, quiet=True, timeout_sec=12)
+                save_state(state)
+                last_gmail_sync_ts = time.time()
+
             tick_count += 1
-            run_quote_scan_tick(state, holdings, force=args.force, verbose=(tick_count == 1 or tick_count % 4 == 0))
+            run_quote_scan_tick(state, holdings, force=args.force, verbose=(tick_count == 1 or tick_count % 6 == 0))
             elapsed = time.time() - start_ts
             if elapsed + args.interval > args.watch_seconds:
                 break
