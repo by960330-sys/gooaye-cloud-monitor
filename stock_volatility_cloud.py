@@ -18,6 +18,7 @@ GitHub Actions 雲端 & 本地端雙引擎「秒級即時」持股盤中重大�
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import email
 import email.utils
 from email.header import Header, decode_header
@@ -28,6 +29,7 @@ import json
 import os
 import re
 import smtplib
+import socket
 import ssl
 import subprocess
 import sys
@@ -37,6 +39,9 @@ import urllib.request
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+# 全局預設 Socket Timeout，防止任何網路或 IMAP/SSL 連線因系統休眠而永久卡死
+socket.setdefaulttimeout(12)
 
 STATE_FILE = Path(__file__).parent / "stock_alert_state.json"
 
@@ -226,7 +231,7 @@ def _extract_email_text(msg) -> str:
     return re.sub(r"\s+", " ", body)
 
 
-def sync_holdings_from_gmail(state: dict, quiet: bool = False) -> list:
+def _sync_holdings_from_gmail_impl(state: dict, quiet: bool = False) -> list:
     """
     優先連結 Gmail (by960330@gmail.com) 檢查最新國泰證券【AI投資日報】(台股庫存)、
     【美股庫存電子報】與【成交回報】，動態更新當前實際持股名單。
@@ -256,7 +261,7 @@ def sync_holdings_from_gmail(state: dict, quiet: bool = False) -> list:
     try:
         if not quiet:
             print(f"[GMAIL SYNC] 正在連結 Gmail ({gmail_user}) 檢查最新券商庫存與已發送預警紀錄...")
-        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+        mail = imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=10)
         mail.login(gmail_user, gmail_pass)
         mail.select("INBOX")
 
@@ -365,7 +370,10 @@ def sync_holdings_from_gmail(state: dict, quiet: bool = False) -> list:
                                 }
                                 print(f"[GMAIL SYNC] 從成交回報偵測到新買進台股: {nm} ({sym})")
 
-        mail.logout()
+        try:
+            mail.logout()
+        except Exception:
+            pass
         updated_list = list(holdings_by_symbol.values())
         state["holdings"] = updated_list
         state["last_gmail_sync"] = get_taipei_now().strftime("%Y-%m-%d %H:%M:%S")
@@ -376,6 +384,28 @@ def sync_holdings_from_gmail(state: dict, quiet: bool = False) -> list:
         if not quiet:
             print(f"[WARN] Gmail 同步過程發生例外 ({e})，維持既有持股清單: {[h['symbol'] for h in current_holdings]}")
         return current_holdings
+
+
+def sync_holdings_from_gmail(state: dict, quiet: bool = False, timeout_sec: int = 12) -> list:
+    """
+    以硬超時執行緒包裝 Gmail IMAP 同步（最長等待 12 秒），
+    徹底防止因系統休眠喚醒或底層 SSL 網路切換導致主報價迴圈被卡死！
+    """
+    current_holdings = state.get("holdings") or list(DEFAULT_HOLDINGS)
+    ex = ThreadPoolExecutor(max_workers=1)
+    fut = ex.submit(_sync_holdings_from_gmail_impl, state, quiet)
+    try:
+        return fut.result(timeout=timeout_sec)
+    except FuturesTimeoutError:
+        if not quiet:
+            print(f"[WARN] Gmail IMAP 同步超過 {timeout_sec}s 硬超時限制，立即跳過以保護即時報價迴圈不中斷！")
+        return current_holdings
+    except Exception as e:
+        if not quiet:
+            print(f"[WARN] Gmail 同步外層例外 ({e})，維持既有持股。")
+        return current_holdings
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
 
 
 def _parse_float(val) -> float:
@@ -713,8 +743,9 @@ def run_quote_scan_tick(state: dict, holdings: list, force: bool = False, verbos
             if verbose:
                 src_tag = quote.get("source", "REALTIME")
                 lat_str = f" (延遲:{quote['latency_sec']}s)" if quote.get("latency_sec") is not None else ""
+                now_ts_str = get_taipei_now().strftime("%H:%M:%S")
                 print(
-                    f"[QUOTE|{src_tag}] {stock['name']} ({stock['symbol']}) [交易日:{trading_date}]: "
+                    f"[{now_ts_str}] [QUOTE|{src_tag}] {stock['name']} ({stock['symbol']}) [交易日:{trading_date}]: "
                     f"現價={quote['price']} | 昨收={quote['prev_close']} | "
                     f"漲跌={quote['change_pct']:+.2f}%{lat_str} | 當日已通報最高波幅={last_notified_abs:.2f}%"
                 )
@@ -767,7 +798,7 @@ def main():
     parser.add_argument("--force", action="store_true", help="忽略開盤時段限制強制檢查全市場標的")
     parser.add_argument("--daemon", action="store_true", help="本地端背景常駐即時監測模式（開盤時每 15 秒即時掃描）")
     parser.add_argument("--watch-seconds", type=int, default=0, help="雲端連續即時監測秒數（例如 260 秒內每 15 秒掃描一次）")
-    parser.add_argument("--interval", type=int, default=15, help="即時報價輪詢間隔秒數（預設 15 秒）")
+    parser.add_argument("--interval", type=int, default=10, help="即時報價輪詢間隔秒數（預設 10 秒）")
     args = parser.parse_args()
 
     state = load_state()
@@ -790,13 +821,13 @@ def main():
                 tw_open = is_tw_market_open()
                 us_open = is_us_market_open()
                 if not tw_open and not us_open and not args.force:
-                    time.sleep(60)
+                    time.sleep(20)
                     continue
 
-                # 每 10 分鐘同步一次 Gmail 最新持股與已寄信狀態
-                if time.time() - last_gmail_sync_ts >= 600:
+                # 每 20 分鐘非阻塞同步一次 Gmail 最新持股與已寄信狀態（12 秒硬超時保護）
+                if time.time() - last_gmail_sync_ts >= 1200:
                     state = load_state()
-                    holdings = sync_holdings_from_gmail(state, quiet=True)
+                    holdings = sync_holdings_from_gmail(state, quiet=True, timeout_sec=12)
                     save_state(state)
                     last_gmail_sync_ts = time.time()
 

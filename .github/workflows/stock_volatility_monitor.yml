@@ -23,7 +23,7 @@ permissions:
 jobs:
   stock-volatility-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 65
 
     steps:
       - name: Checkout repository
@@ -39,7 +39,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Run Real-Time Stock Volatility Monitor (15s Tick Polling)
+      - name: Run Real-Time Stock Volatility Monitor (10s Continuous Polling for 55m)
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -47,7 +47,7 @@ jobs:
           if [ "${{ github.event.inputs.force_check }}" = "true" ]; then
             python stock_volatility_cloud.py --force
           else
-            python stock_volatility_cloud.py --watch-seconds 255 --interval 15
+            python stock_volatility_cloud.py --watch-seconds 3300 --interval 10
           fi
 
       - name: Auto-Trigger Gemini 4 Argon Earnings Analysis if New Holding Detected
