@@ -12,13 +12,15 @@ GitHub Actions 全雲端持股財報與法說會原音深度拆解系統 (Portfo
      立即自動抓取該標的最新一季財報與最新一場法說會（Earnings Call），執行深度基本面拆解並提出明確投資看法！
    - 觸發條件 B（現有持股發布新財報或召開新法說會）：當現有持股（如 2330 台積電、2454 聯發科、VOO、SPCX 等）
      發布最新一季財務報表，或召開最新一季法人說明會時，自動觸發執行！
-3. 【多模態法說會原音直連 + 四季財報三率精算 + 最新外資問答彙整】：
-   - 自動搜尋並下載最新法說會／Earnings Call 錄音（優化為 16kHz 單聲道 MP3 直傳 Gemini Files API）。
-   - 自動拉取 Yahoo Finance 近四季完整損益表（精算毛利率、營業利益率、淨利率、EPS 之 QoQ 與 YoY）。
-   - 自動彙整最新法說會新聞、外資報告焦點與產能/CapEx 指引。
-4. 【調用最高階旗艦模型 Gemini 4 Argon (`gemini-4-argon`)】：
-   - 從「經營層業績數據、未來產業與 CapEx 指引、法人分析師尖銳問答、AI 深度投資觀點與實戰操作建議」四大維度
-     產出機構買方（Buy-Side）研究員等級深度分析報告。
+3. 【100% 第一手官方財報三表自主精算 + 法說會原音親自拆解（嚴禁抓取二手分析師或投顧觀點）】：
+   - 自動搜尋並下載最新法說會／Earnings Call 第一手錄音（優化為 16kHz 單聲道 MP3 直傳 Gemini Files API 親自聆聽）。
+   - 自動拉取公司官方近四季完整財務三表原始數據：
+     (1) 損益表（營收、毛利、毛利率、研發費用率、營益率、淨利率、EPS 及自主精算 QoQ/YoY 與三率 bps 變動）
+     (2) 資產負債表（現金、應收帳款、存貨、自主精算存貨週轉天數 DOI、不動產廠房設備 PP&E、負債比）
+     (3) 現金流量表（營業現金流 OCF、資本支出 CapEx、自主精算自由現金流 FCF、折舊攤銷與獲利含金量）
+   - 嚴格禁止抓取或引用任何第三方外資報告、投顧老師、財經記者或二手分析師評論！
+4. 【調用最高階旗艦模型 Gemini 4 Argon (`gemini-4-argon`) 親自獨立研究】：
+   - 完全由 AI 自己根據第一手財報三表與法說會經營層原音，獨立完成數據驗算、法說會重點整理、Q&A 攻防解讀與實戰操作建議。
 5. 【雙通道雲端自動交付】：
    - 自動透過 Gmail SMTP 寄送排版精美的完整 HTML 深度分析報告至使用者信箱。
    - 自動歸檔 Markdown 報告至 Google Drive「證券操作紀錄/持股財報與法說會深度分析/{代號}_{名稱}」資料夾。
@@ -130,42 +132,46 @@ MODEL_PRIORITY_CHAIN = [
     "gemini-3.5-flash",
 ]
 
-EARNINGS_SYSTEM_INSTRUCTION = """你是一位頂尖機構法人（買方 Buy-Side）的首席科技與產業投資總監（CIO），擅長運用旗艦級模型（Gemini 4 Argon）的深度多模態推理能力，針對個人投資組合中的持股標的，結合「法說會（Earnings Call）原音錄音」、「近四季完整財務報表三率數據」與「最新市場外資共識」，產出具備一線外資與買方機構深度研究規格的分析報告，並給出極度明確的投資觀點與操作策略。
+EARNINGS_SYSTEM_INSTRUCTION = """你是投資人專屬的獨立首席研究員與投資總監（Antigravity × Gemini 4 Argon）。你的任務是針對個人投資組合中的持股標的，**100% 根據「法說會（Earnings Call）第一手原音錄音／官方簡報」與「公司官方發布之第一手財務三表（損益表、資產負債表、現金流量表）原始數據」**，由你自己親自獨立完成數據運算、法說會整理、邏輯推演與投資判斷。
 
-【核心分析與撰寫準則】
-1. 數據精確與邏輯穿透：
-   - 必須詳實引用提供的近四季營收、毛利率（Gross Margin）、營業利益率（Operating Margin）、稅後淨利與 EPS 數據，精確分析 QoQ（季增率）與 YoY（年增率）變化背後的核心驅動因素（如產品組合改善、先進製程/AI 佔比提升、ASP 漲價、折舊或匯率影響）。
-2. 法說會原音與經營層態度解讀：
-   - 若附有法說會音訊或逐字重點，請仔細捕捉經營層（CEO/CFO）在闡述未來展望與回答外資分析師提問時的語氣、信心度與用詞細節。
-3. 嚴格按照以下【四大核心維度】輸出繁體中文 Markdown 深度報告：
+【最高天條：100% 自主第一手研究，嚴禁抓取或轉述二手分析師／投顧觀點】
+1. **嚴格禁止引用二手觀點**：
+   - 絕對不可抓取、抄襲、轉述任何外資券商（如大摩、小摩、高盛等）、投顧機構、財經媒體記者或其他分析師的二手報告、目標價或評論。
+   - 報告中的所有財報數據解讀、三率變動歸因、存貨與現金流健康度診斷、法說會重點整理與最終投資策略，必須 **100% 出自你（Gemini 4 Argon）對第一手財報數字與法說會經營層原音的獨立拆解与思考**。
+2. **第一手財務三表交叉驗算**：
+   - 必須詳實引用並親自驗算近四季**損益表**（營收、毛利率、研發費用率、營業利益率、稅後淨利、EPS 之 QoQ 與 YoY 變化）、**資產負債表**（現金水位、應收帳款、存貨金額與存貨週轉天數 DOI 變化，自行判斷是積極備貨還是庫存積壓）、以及**現金流量表**（營業現金流 OCF、資本支出 CapEx、自由現金流 FCF 與獲利含金量 OCF/NI）。
+3. **法說會第一手原音與經營層語氣親自解讀**：
+   - 直接聆聽並整理經營層（CEO/CFO）在法說會上的第一手發言與現場 Q&A 問答，親自判斷高層對未來產能、定價權、毛利率與新產品進度的真實底氣，不依賴任何外部媒體摘要。
+4. 嚴格按照以下【四大核心維度 + 尾頁獨立總結】輸出繁體中文 Markdown 深度報告：
 
-# 📊 {公司名稱} ({股票代號}) 最新財報與法說會深度拆解報告
-> **分析模型**：Gemini 4 Argon 旗艦深度推理 ｜ **觸發原因**：{觸發原因}
+# 📊 {公司名稱} ({股票代號}) 第一手財報三表與法說會原音獨立拆解報告
+> **獨立研究引擎**：Antigravity × Gemini 4 Argon（100% 第一手財報與法說原音自主拆解，零二手投顧/外資觀點） ｜ **觸發原因**：{觸發原因}
 
-## 一、 經營層核心業績數據拆解 (Quarterly Financial Performance)
-- **核心財務三率與 EPS 表現總表**：請整理一張清晰的 Markdown 表格，列出最新季度與前幾季的營收、毛利率、營業利益率、稅後淨利、EPS 以及 QoQ / YoY 變動。
-- **Beat / Miss 市場預期分析**：分析最新一季財報與毛利率表現是否優於（Beat）、符合（In-line）或低於（Miss）外資法人與市場共識，並拆解關鍵原因。
+## 一、 第一手財務三表深度拆解（損益表 × 資產負債表 × 現金流量表）
+- **1. 損益表核心三率與 EPS 自主驗算總表**：整理清晰的 Markdown 表格，列出近四季營業收入、毛利率、研發費用率、營業利益率、稅後淨利、EPS 以及 QoQ / YoY 與三率季增減（bps / 百分點）。
+- **2. 資產負債表與存貨週轉健康度診斷**：根據第一手資產負債表數據，拆解現金及約當現金、應收帳款、存貨（Inventory）與存貨週轉天數（DOI）變化，由你親自判斷公司目前處於「主動備料迎接旺季」還是「終端去庫存緩慢」。
+- **3. 現金流量表與獲利含金量檢驗**：拆解營業活動現金流（OCF）、資本支出（CapEx）、自由現金流（FCF）及折舊攤銷，計算獲利含金量（OCF / 稅後淨利），檢視帳面獲利是否真正轉化為自由現金流入。
 
-## 二、 未來產業與營運指引 (Future Guidance & CapEx Outlook)
-- **下季與全年財務指引**：經營層對下一季及全年的營收成長區間、毛利率區間、營業費用率與產品定價權（Pricing Power）展望。
-- **資本支出（CapEx）與產能擴充規劃**：CapEx 規模是否上修／維持／下修？資金主要投向（先進製程、先進封裝 CoWoS/SoIC、新廠建置或研發開案）。
-- **各大終端應用動能與新開案進度**：深入拆解 AI 伺服器／ASIC、HPC、智慧型手機、車用電子、消費性電子等領域的需求強弱與新產品量產時程（Tape-out / Ramp-up）。
+## 二、 法說會經營層第一手營運指引與資本支出拆解 (First-Hand Management Guidance)
+- **下季與全年官方財務指引**：直接整理經營層（CEO/CFO）在法說會中親口給出的下一季與全年營收區間、毛利率區間、營業費用率與產品定價權（ASP / Pricing Power）。
+- **資本支出（CapEx）與產能擴張規劃**：整理官方公布的 CapEx 金額變化與實際投向（如先進製程、封裝測試、廠房設備、研發開案），並與現金流量表中的實際 CapEx 支出進行比對。
+- **各大終端應用與新產品量產時程**：根據經營層第一手說明，整理各產品線／技術節點／終端應用（如 AI 晶片、HPC、邊緣運算、手機、車用等）的營收佔比變化與未來量產時程（Tape-out / Ramp-up）。
 
-## 三、 法人／外資分析師問答 (Analyst Q&A) 關鍵洞見
-- **外資機構最關注的尖銳提問**：梳理摩根士丹利、高盛、摩根大通、美銀等外資分析師在 Q&A 環節追問的核心瓶頸（如產能供需缺口、毛利率稀釋風險、競爭對手市佔消長、地緣政治與關稅影響）。
-- **經營層回應透露的真實產業線索**：高層在回答中釋出的定性訊號、護城河優勢與訂單能見度。
+## 三、 法說會現場問答 (Q&A Session) 第一手攻防紀錄與我方獨立解讀
+- **現場提問核心議題與經營層第一手回答整理**：直接根據法說會 Q&A 環節的原音內容，逐條整理現場提問的關鍵問題（如產能瓶頸、毛利率稀釋因子、折舊攤提、競爭格局、客戶拉貨節奏）以及高層的原始回答。
+- **我方對經營層語氣與言外之意的獨立判讀**：不看任何外部評論，純粹由你從經營層回答的用詞精確度、語氣篤定度與前後季說法一致性，剖析哪些領域具有極高確定性、哪些領域高層態度轉趨保守。
 
-## 四、 AI 首席投資總監深度觀點與實戰操作建議（明確看法）
-- **指引定性總評**：明確判定本次法說會與財報屬「🔥 大幅超預期 (Strong Beat & Raise)」、「✅ 穩健符合預期 (Solid In-Line)」或「⚠️ 展望保守需警戒 (Conservative / Miss)」。
-- **估值水位與合理區間推演**：結合當前股價、Trailing P/E、Forward P/E 與未來 EPS 成長率，評估目前估值處於歷史區間的偏低、合理或偏高位置。
-- **未來 1～3 季關鍵催化劑 (Catalysts) 與下行風險 (Risks)**：條列最具影響力的多空觀察點。
-- **🎯 明確部位操作建議（Actionable Strategy）**：針對投資人目前的持股部位，明確給出「**逢低分批加碼 / 堅定續抱 / 逢高部分獲利了結 / 觀望防守**」的具體看法與關鍵觀察指標！
+## 四、 我方獨立估值推演與實戰操作建議
+- **基本面動能自主定性**：根據我們對財報三表與法說會指引的獨立拆解，判定公司基本面處於「🔥 獲利與指引雙重加速」、「✅ 穩健成長符合軌跡」或「⚠️ 成長放緩／利潤率受壓」。
+- **第一手獨立估值推演**：直接依據公司當前股價、歷史本益比（Trailing P/E）、股價淨值比（P/B）、自由現金流殖利率（FCF Yield）以及我們自己根據官方指引推算的未來四季 EPS，獨立計算合理估值區間（絕不引用外資目標價）。
+- **未來 1～3 季核心催化劑 (Catalysts) 與下行風險 (Risks)**：由我們自己從財務三表與產業供需推導出的關鍵多空指標。
+- **🎯 明確部位操作建議（Actionable Strategy）**：針對投資人目前持有的部位，明確給出「**逢低分批加碼 / 堅定續抱 / 逢高部分獲利了結 / 觀望防守**」的具體執行方案與加減碼觸發條件！
 
-## 🖋️ 尾頁總結：AI 首席投資總監（Antigravity × Gemini 4 Argon）的獨立深度看法與預期差判讀
-- **強制尾頁深度附錄（極度詳盡，嚴禁敷衍）**：在報告最末頁，請跳脫公司官方新聞稿與表面財務數字，以頂尖買方機構 CIO 的獨立視角，深入剖析：
-  1. **市場共識 vs. 我們的獨立預期差（Expectation Gap）**：華爾街與外資目前最容易低估或過度樂觀的盲點是什麼？
-  2. **產業鏈上下游交叉驗證**：從供應鏈（如先進製程、封裝、記憶體、CSP 資本支出、終端拉貨）驗證經營層說法的真實含金量。
-  3. **投資人專屬部位實戰結論**：結合投資人當前整體投資組合（台積電 2330.TW、聯發科 2454.TW、VOO、SPCX），給出最誠實、最犀利的最終定調與資金配置建議！
+## 🖋️ 尾頁總結：Antigravity（Gemini 4 Argon）第一手獨立深度看法與操作定調
+- **強制尾頁深度附錄（100% 自主觀點，極度詳盡）**：在報告最末頁，以你作為投資人專屬 CIO 的獨立第一性原理視角，總結：
+  1. **第一性原理穿透定調（The Bottom Line）**：剝除所有公關辭令後，從財務三表（毛利率趨勢、存貨週轉、自由現金流、CapEx 轉化率）直接定調該公司未來 1～3 年的競爭護城河是擴大還是收窄。
+  2. **財報數字與法說會說法的交叉驗證**：法說會高層講的展望，有沒有在資產負債表（如存貨備貨、應收帳款、合約負債）與現金流量表（如資本支出）中看到真實數字支撐？
+  3. **投資人專屬部位最終實戰結論**：結合投資人當前整體持股組合（台積電 2330.TW、聯發科 2454.TW、VOO、SPCX），給出最誠實、最直接的資金配置與操作結論！
 """
 
 
@@ -403,8 +409,10 @@ def _fmt_num(val) -> str:
 
 def fetch_stock_financial_snapshot(stock: dict) -> dict:
     """
-    透過 yfinance 擷取標的之最新四季損益表、三率（毛利率/營益率/淨利率）、QoQ/YoY 成長率與估值指標。
-    同時回傳 latest_quarter_date 供自動觸發比對。
+    擷取公司官方發布之第一手財務三表（損益表、資產負債表、現金流量表），
+    並由程式自主精算：三率（毛利率/營益率/淨利率）、研發費用率、QoQ/YoY 成長率、
+    三率季增減（bps）、存貨週轉天數（DOI）、自由現金流（FCF）與獲利含金量（OCF/NI）。
+    嚴格不抓取任何第三方分析師預測或目標價。
     """
     import yfinance as yf
 
@@ -423,7 +431,6 @@ def fetch_stock_financial_snapshot(stock: dict) -> dict:
     currency = info.get("currency", "TWD" if market == "TW" else "USD")
     current_price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose")
     trailing_pe = info.get("trailingPE")
-    forward_pe = info.get("forwardPE")
     pb_ratio = info.get("priceToBook")
     market_cap = info.get("marketCap")
     roe = info.get("returnOnEquity")
@@ -432,41 +439,75 @@ def fetch_stock_financial_snapshot(stock: dict) -> dict:
 
     quarters = []
     q_table_rows = []
+    bs_table_rows = []
+    cf_table_rows = []
     latest_quarter_date = ""
+
+    def _extract_df_series(df, cols, keys):
+        if df is None or df.empty:
+            return [None] * len(cols)
+        for k in keys:
+            if k in df.index:
+                out = []
+                for c in cols:
+                    val = df.loc[k, c] if c in df.columns else None
+                    if val is not None and not (isinstance(val, float) and math.isnan(val)):
+                        try:
+                            out.append(float(val))
+                        except Exception:
+                            out.append(None)
+                    else:
+                        out.append(None)
+                return out
+        return [None] * len(cols)
 
     try:
         q_inc = t.quarterly_income_stmt
+        q_bs = getattr(t, "quarterly_balance_sheet", None)
+        q_cf = getattr(t, "quarterly_cashflow", None)
+
         if q_inc is not None and not q_inc.empty:
             cols = list(q_inc.columns[:5])
             quarters = [c.strftime("%Y-%m-%d") if hasattr(c, "strftime") else str(c)[:10] for c in cols]
             if quarters:
                 latest_quarter_date = quarters[0]
 
-            def _get_series(keys):
-                for k in keys:
-                    if k in q_inc.index:
-                        return [
-                            float(q_inc.loc[k, c])
-                            if q_inc.loc[k, c] is not None and not math.isnan(float(q_inc.loc[k, c]))
-                            else None
-                            for c in cols
-                        ]
-                return [None] * len(cols)
+            revs = _extract_df_series(q_inc, cols, ["Total Revenue", "Operating Revenue"])
+            cogs_list = _extract_df_series(q_inc, cols, ["Cost Of Revenue", "Reconciled Cost Of Revenue"])
+            gps = _extract_df_series(q_inc, cols, ["Gross Profit"])
+            rds = _extract_df_series(q_inc, cols, ["Research And Development"])
+            ois = _extract_df_series(q_inc, cols, ["Operating Income", "Total Operating Income As Reported"])
+            nis = _extract_df_series(q_inc, cols, ["Net Income", "Net Income Common Stockholders"])
+            eps_list = _extract_df_series(q_inc, cols, ["Diluted EPS", "Basic EPS"])
 
-            revs = _get_series(["Total Revenue", "Operating Revenue"])
-            gps = _get_series(["Gross Profit"])
-            ois = _get_series(["Operating Income", "Total Operating Income As Reported"])
-            nis = _get_series(["Net Income", "Net Income Common Stockholders"])
-            eps_list = _get_series(["Diluted EPS", "Basic EPS"])
+            # 資產負債表欄位對齊
+            bs_cols = list(q_bs.columns[:5]) if (q_bs is not None and not q_bs.empty) else []
+            cash_list = _extract_df_series(q_bs, bs_cols, ["Cash Cash Equivalents And Short Term Investments", "Cash And Cash Equivalents"])
+            ar_list = _extract_df_series(q_bs, bs_cols, ["Accounts Receivable", "Receivables"])
+            inv_list = _extract_df_series(q_bs, bs_cols, ["Inventory"])
+            ppe_list = _extract_df_series(q_bs, bs_cols, ["Net PPE"])
+            assets_list = _extract_df_series(q_bs, bs_cols, ["Total Assets"])
+            liab_list = _extract_df_series(q_bs, bs_cols, ["Total Liabilities Net Minority Interest", "Total Liabilities"])
+            eq_list = _extract_df_series(q_bs, bs_cols, ["Stockholders Equity", "Total Equity Gross Minority Interest"])
+
+            # 現金流量表欄位對齊
+            cf_cols = list(q_cf.columns[:5]) if (q_cf is not None and not q_cf.empty) else []
+            ocf_list = _extract_df_series(q_cf, cf_cols, ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities"])
+            capex_list = _extract_df_series(q_cf, cf_cols, ["Capital Expenditure", "Capital Expenditures"])
+            fcf_list = _extract_df_series(q_cf, cf_cols, ["Free Cash Flow"])
+            da_list = _extract_df_series(q_cf, cf_cols, ["Depreciation And Amortization", "Reconciled Depreciation"])
 
             for idx, q_date in enumerate(quarters):
                 rev = revs[idx]
+                cogs = cogs_list[idx]
                 gp = gps[idx]
+                rd = rds[idx]
                 oi = ois[idx]
                 ni = nis[idx]
                 eps = eps_list[idx]
 
                 gm_pct = (gp / rev * 100.0) if (rev and gp is not None and rev != 0) else None
+                rd_pct = (rd / rev * 100.0) if (rev and rd is not None and rev != 0) else None
                 om_pct = (oi / rev * 100.0) if (rev and oi is not None and rev != 0) else None
                 nm_pct = (ni / rev * 100.0) if (rev and ni is not None and rev != 0) else None
 
@@ -478,10 +519,15 @@ def fetch_stock_financial_snapshot(stock: dict) -> dict:
                 if idx + 4 < len(revs) and revs[idx] and revs[idx + 4] and revs[idx + 4] != 0:
                     rev_yoy = (revs[idx] - revs[idx + 4]) / abs(revs[idx + 4]) * 100.0
 
+                prev_gm = (gps[idx + 1] / revs[idx + 1] * 100.0) if (idx + 1 < len(revs) and revs[idx + 1] and gps[idx + 1] is not None) else None
+                gm_qoq_bps = int(round((gm_pct - prev_gm) * 100)) if (gm_pct is not None and prev_gm is not None) else None
+
                 q_table_rows.append({
                     "quarter": q_date,
                     "revenue": rev,
                     "gross_margin_pct": gm_pct,
+                    "gm_qoq_bps": gm_qoq_bps,
+                    "rd_margin_pct": rd_pct,
                     "operating_margin_pct": om_pct,
                     "net_margin_pct": nm_pct,
                     "net_income": ni,
@@ -489,35 +535,97 @@ def fetch_stock_financial_snapshot(stock: dict) -> dict:
                     "rev_qoq_pct": rev_qoq,
                     "rev_yoy_pct": rev_yoy,
                 })
-    except Exception as e:
-        print(f"[WARN] 擷取 {symbol} 季度損益表異常: {e}", file=sys.stderr)
 
-    # 格式化 Markdown 財報摘要供模型推理
+                # 資產負債表自主精算
+                if idx < len(bs_cols):
+                    b_q = bs_cols[idx].strftime("%Y-%m-%d") if hasattr(bs_cols[idx], "strftime") else str(bs_cols[idx])[:10]
+                    inv_val = inv_list[idx]
+                    doi_days = (inv_val / cogs * 90.0) if (inv_val is not None and cogs and cogs > 0) else None
+                    debt_ratio = (liab_list[idx] / assets_list[idx] * 100.0) if (liab_list[idx] is not None and assets_list[idx]) else None
+                    bs_table_rows.append({
+                        "quarter": b_q,
+                        "cash": cash_list[idx],
+                        "ar": ar_list[idx],
+                        "inventory": inv_val,
+                        "doi_days": doi_days,
+                        "ppe": ppe_list[idx],
+                        "total_assets": assets_list[idx],
+                        "equity": eq_list[idx],
+                        "debt_ratio_pct": debt_ratio,
+                    })
+
+                # 現金流量表自主精算
+                if idx < len(cf_cols):
+                    c_q = cf_cols[idx].strftime("%Y-%m-%d") if hasattr(cf_cols[idx], "strftime") else str(cf_cols[idx])[:10]
+                    ocf_val = ocf_list[idx]
+                    capex_val = capex_list[idx]
+                    fcf_val = fcf_list[idx]
+                    if fcf_val is None and ocf_val is not None and capex_val is not None:
+                        fcf_val = ocf_val - abs(capex_val)
+                    ocf_to_ni = (ocf_val / ni * 100.0) if (ocf_val is not None and ni and ni > 0) else None
+                    cf_table_rows.append({
+                        "quarter": c_q,
+                        "ocf": ocf_val,
+                        "capex": capex_val,
+                        "fcf": fcf_val,
+                        "da": da_list[idx],
+                        "ocf_to_ni_pct": ocf_to_ni,
+                    })
+    except Exception as e:
+        print(f"[WARN] 擷取 {symbol} 季度財務三表異常: {e}", file=sys.stderr)
+
+    # 格式化第一手財務三表 Markdown 供模型自主推理
     md_lines = [
-        f"### 📌 標的基礎估值與市場數據（{name} / {symbol}）",
-        f"- **資產類別**：{quote_type}（市場：{market}，計價幣別：{currency}）",
+        f"### 📌 標的基礎市場數據與實際歷史估值（{name} / {symbol}）",
+        f"- **資產類別**：{quote_type}（市場：{market}，財報計價幣別：{currency}）",
         f"- **最新股價**：{current_price} {currency}（52 週區間：{low_52w} ～ {high_52w}）",
         f"- **總市值**：{_fmt_num(market_cap)} {currency}",
-        f"- **本益比 (Trailing P/E)**：{f'{trailing_pe:.2f}' if isinstance(trailing_pe, (int, float)) else 'N/A'} ｜ **預估本益比 (Forward P/E)**：{f'{forward_pe:.2f}' if isinstance(forward_pe, (int, float)) else 'N/A'}",
-        f"- **股價淨值比 (P/B)**：{f'{pb_ratio:.2f}' if isinstance(pb_ratio, (int, float)) else 'N/A'} ｜ **ROE**：{f'{roe*100:.2f}%' if isinstance(roe, (int, float)) else 'N/A'}",
+        f"- **實際歷史本益比 (Trailing P/E)**：{f'{trailing_pe:.2f}' if isinstance(trailing_pe, (int, float)) else 'N/A'} ｜ **股價淨值比 (P/B)**：{f'{pb_ratio:.2f}' if isinstance(pb_ratio, (int, float)) else 'N/A'} ｜ **股東權益報酬率 (ROE)**：{f'{roe*100:.2f}%' if isinstance(roe, (int, float)) else 'N/A'}",
         "",
     ]
 
     if q_table_rows:
-        md_lines.append("### 📊 近四季核心損益與三率數據表（Quarterly Financials）")
-        md_lines.append("| 季度結算日 | 營業收入 (Revenue) | 營收季增 (QoQ) | 營收年增 (YoY) | 毛利率 (Gross Margin) | 營業利益率 (Op Margin) | 稅後淨利 (Net Income) | 每股盈餘 (EPS) |")
-        md_lines.append("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
+        md_lines.append("### 📊 【表一】第一手損益表與三率自主精算表（Quarterly Income Statement）")
+        md_lines.append("| 季度結算日 | 營業收入 | 營收季增 (QoQ) | 營收年增 (YoY) | 毛利率 (季變動 bps) | 研發費用率 | 營業利益率 | 稅後淨利 | 每股盈餘 (EPS) |")
+        md_lines.append("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
         for r in q_table_rows[:4]:
             qoq_str = f"{r['rev_qoq_pct']:+.2f}%" if r["rev_qoq_pct"] is not None else "N/A"
             yoy_str = f"{r['rev_yoy_pct']:+.2f}%" if r["rev_yoy_pct"] is not None else "N/A"
-            gm_str = f"{r['gross_margin_pct']:.2f}%" if r["gross_margin_pct"] is not None else "N/A"
+            bps_str = f" ({r['gm_qoq_bps']:+d} bps)" if r["gm_qoq_bps"] is not None else ""
+            gm_str = f"{r['gross_margin_pct']:.2f}%{bps_str}" if r["gross_margin_pct"] is not None else "N/A"
+            rd_str = f"{r['rd_margin_pct']:.2f}%" if r["rd_margin_pct"] is not None else "N/A"
             om_str = f"{r['operating_margin_pct']:.2f}%" if r["operating_margin_pct"] is not None else "N/A"
             eps_str = f"{r['eps']:.2f}" if r["eps"] is not None else "N/A"
             md_lines.append(
-                f"| **{r['quarter']}** | {_fmt_num(r['revenue'])} | {qoq_str} | {yoy_str} | **{gm_str}** | **{om_str}** | {_fmt_num(r['net_income'])} | **{eps_str}** |"
+                f"| **{r['quarter']}** | {_fmt_num(r['revenue'])} | {qoq_str} | {yoy_str} | **{gm_str}** | {rd_str} | **{om_str}** | {_fmt_num(r['net_income'])} | **{eps_str}** |"
             )
-    else:
-        md_lines.append("（註：此標的為 ETF 或暫無標準季度損益表，請聚焦於其成分股權重、總經環境與資產配置策略分析）")
+        md_lines.append("")
+
+    if bs_table_rows:
+        md_lines.append("### 🏦 【表二】第一手資產負債表與存貨週轉自主精算表（Quarterly Balance Sheet）")
+        md_lines.append("| 季度結算日 | 現金及短投 | 應收帳款 | 存貨 (Inventory) | 存貨週轉天數 (DOI) | 不動產廠房設備 (PP&E) | 股東權益 | 負債比率 |")
+        md_lines.append("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
+        for b in bs_table_rows[:4]:
+            doi_str = f"{b['doi_days']:.1f} 天" if b["doi_days"] is not None else "N/A"
+            dr_str = f"{b['debt_ratio_pct']:.1f}%" if b["debt_ratio_pct"] is not None else "N/A"
+            md_lines.append(
+                f"| **{b['quarter']}** | {_fmt_num(b['cash'])} | {_fmt_num(b['ar'])} | {_fmt_num(b['inventory'])} | **{doi_str}** | {_fmt_num(b['ppe'])} | {_fmt_num(b['equity'])} | {dr_str} |"
+            )
+        md_lines.append("")
+
+    if cf_table_rows:
+        md_lines.append("### 💵 【表三】第一手現金流量表與獲利含金量自主精算表（Quarterly Cash Flow Statement）")
+        md_lines.append("| 季度結算日 | 營業活動現金流 (OCF) | 資本支出 (CapEx) | 自由現金流 (FCF) | 折舊與攤銷 (D&A) | 獲利含金量 (OCF/淨利) |")
+        md_lines.append("| :--- | :---: | :---: | :---: | :---: | :---: |")
+        for c in cf_table_rows[:4]:
+            ocf_ni_str = f"{c['ocf_to_ni_pct']:.1f}%" if c["ocf_to_ni_pct"] is not None else "N/A"
+            md_lines.append(
+                f"| **{c['quarter']}** | {_fmt_num(c['ocf'])} | {_fmt_num(c['capex'])} | **{_fmt_num(c['fcf'])}** | {_fmt_num(c['da'])} | **{ocf_ni_str}** |"
+            )
+        md_lines.append("")
+
+    if not q_table_rows:
+        md_lines.append("（註：此標的為 ETF 或暫無標準季度損益表，請聚焦於其官方成分股結構與我們自主推演之總經配置邏輯）")
 
     return {
         "symbol": symbol,
@@ -534,41 +642,17 @@ def fetch_stock_financial_snapshot(stock: dict) -> dict:
 
 def fetch_earnings_news_and_events(stock: dict) -> dict:
     """
-    透過 Google News RSS 與 Yahoo Finance News 抓取該標的最新法說會、財報、資本支出與外資評等新聞。
-    同時偵測是否有最新季度法說會事件標籤（例如 2026Q3_CALL）。
+    嚴格遵守使用者要求：不抓取任何第三方分析師、投顧或外資券商的新聞與報告。
+    僅提供純粹的第一手自主研究原則聲明，確保模型 100% 依賴第一手財務三表與法說會原音。
     """
-    name = stock["name"]
-    ticker = stock["ticker"]
-    market = stock["market"]
-
-    if market == "TW":
-        q = f"{name} {ticker} (法說會 OR 財報 OR 毛利率 OR 資本支出 OR 展望)"
-        rss_url = f"https://news.google.com/rss/search?q={urllib.parse.quote(q)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-    else:
-        q = f"{ticker} ({name}) (earnings call OR quarterly results OR guidance OR revenue)"
-        rss_url = f"https://news.google.com/rss/search?q={urllib.parse.quote(q)}&hl=en-US&gl=US&ceid=US:en"
-
-    headlines = []
-    detected_recent_call_tag = None
-
-    try:
-        req = urllib.request.Request(rss_url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            xml_bytes = resp.read()
-        root = ET.fromstring(xml_bytes)
-        for item in root.findall("./channel/item")[:12]:
-            title = (item.findtext("title") or "").strip()
-            pub_date = (item.findtext("pubDate") or "").strip()
-            if title:
-                headlines.append(f"- [{pub_date[:16]}] {title}")
-    except Exception as e:
-        print(f"[WARN] Google News RSS 讀取異常 ({stock['symbol']}): {e}", file=sys.stderr)
-
-    news_md = "\n".join(headlines) if headlines else "（近期無特定法說會新聞標題）"
     return {
-        "headlines": headlines,
-        "news_markdown": f"### 📰 最新法說會、財報與外資觀點新聞彙整\n{news_md}",
-        "detected_call_tag": detected_recent_call_tag,
+        "headlines": [],
+        "news_markdown": (
+            "### 🛡️ 第一手獨立研究規範（零第三方分析師／零投顧資料）\n"
+            "- 本次分析**已完全屏蔽**所有外部投顧、外資券商報告與財經媒體二手評論。\n"
+            "- 請 **100% 依據上方三張第一手官方財務報表（損益表、資產負債表、現金流量表）與法說會第一手原音／官方經營層發言**，由你自己獨立運算、獨立整理並提出你自己的投資觀點。"
+        ),
+        "detected_call_tag": None,
     }
 
 
@@ -746,18 +830,18 @@ def analyze_stock_with_argon(
     )
 
     audio_note = (
-        f"已附上最新法說會／財報會議音訊錄音（標題：{audio_info.get('title')}），請直接聆聽經營層談話與分析師問答細節！"
+        f"已附上最新法說會／財報會議第一手原音錄音（標題：{audio_info.get('title')}），請直接聆聽經營層發言與現場問答原音細節，由你自己親自整理與分析！"
         if uploaded_file
-        else f"（法說會音訊參考標題：{audio_info.get('title') or '無獨立音檔，請結合下方完整四季財報數據、最新法說會新聞與你的知識庫進行深度拆解'}）"
+        else f"（法說會音訊參考標題：{audio_info.get('title') or '無獨立音檔，請 100% 依據下方公司官方發布之第一手財務三表數據進行自主拆解，嚴禁引用任何外部投顧或分析師報告'}）"
     )
 
-    user_prompt = f"""請針對以下投資組合持股標的，執行機構買方（Buy-Side）最高規格之「最新一季財報與法說會深度拆解報告」，並明確提出你的投資看法與操作建議：
+    user_prompt = f"""請針對以下投資組合持股標的，由你自己（Antigravity × Gemini 4 Argon）**100% 根據公司官方第一手財務三表（損益表、資產負債表、現金流量表）與法說會第一手原音**，親自完成數據精算、法說會整理與獨立投資分析報告（**嚴禁抓取或轉述任何其他分析師、外資券商或投顧的二手資料與目標價**）：
 
-- **股票名稱与代號**：{stock['name']} ({stock['symbol']})
+- **股票名稱與代號**：{stock['name']} ({stock['symbol']})
 - **目前持有股數**：{stock.get('shares', 1)} 股
 - **本次分析觸發原因**：{trigger_reason}
 - **最新財報季度結算日**：{fin_snapshot.get('latest_quarter_date') or '最新季度'}
-- **法說會音訊狀態**：{audio_note}
+- **法說會第一手音訊狀態**：{audio_note}
 
 ---
 {fin_snapshot['financial_markdown']}
@@ -766,7 +850,7 @@ def analyze_stock_with_argon(
 {news_info['news_markdown']}
 
 ---
-請嚴格依照系統指令的【四大核心維度】撰寫詳盡、數據精準、邏輯犀利的繁體中文 Markdown 深度分析報告，並在第四部分「AI 首席投資總監深度觀點與實戰操作建議」中，針對我持有的 {stock['name']} ({stock['symbol']}) 提出明確的看法與加減碼/續抱策略！"""
+請嚴格依照系統指令的【四大核心維度 + 尾頁獨立總結】撰寫詳盡、數據精準、邏輯完全自主的繁體中文 Markdown 深度分析報告，並在第四部分與尾頁總結中，完全以你自己的第一性原理推演，針對我持有的 {stock['name']} ({stock['symbol']}) 提出明確的估值推算與加減碼/續抱策略！"""
 
     try:
         last_err = None
