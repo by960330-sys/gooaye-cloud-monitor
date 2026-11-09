@@ -8,7 +8,7 @@ GitHub Actions 雲端 & 本地端雙引擎「秒級即時」持股盤中重大�
    採用 Yahoo Finance v8 `interval=1m&range=1d` 即時成交 Tick 串流端點，台股與美股盤中報價延遲僅約 1~3 秒，
    徹底告別 15 分鐘延遲！
 2. 【15 秒極速掃描循環】：
-   開盤時段每 15 秒自動拉取最新成交價；一旦突破 ±3% / ±6% / ±10%，15 秒內立即觸發 Email 與 Windows 桌面彈窗！
+   開盤時段每 15 秒自動拉取最新成交價；一旦突破 ±3% / ±6% / 台股漲跌停（美股 ±10%），15 秒內立即觸發 Email 與 Windows 桌面彈窗！
 3. 【優先連結 Gmail 同步最新持股 & 發信前雙重防重驗證 (Idempotency Guard)】：
    啟動時及每 10 分鐘自動透過 IMAP 掃描最新「國泰證券 AI投資日報」、「美股庫存電子報」及「券商成交回報」，
    且在準備寄出任何波動警報信的前一刻，再次即時比對信箱是否已有同交易日同等級預警信，100% 杜絕重複寄信。
@@ -26,6 +26,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import imaplib
 import json
+import math
 import os
 import re
 import smtplib
@@ -320,7 +321,7 @@ def _sync_holdings_from_gmail_impl(state: dict, quiet: bool = False) -> list:
                         )
                         try:
                             abs_pct_val = abs(float(pct_str))
-                            if "10%" in tier_str:
+                            if "10%" in tier_str or "漲停" in tier_str or "跌停" in tier_str:
                                 abs_pct_val = max(abs_pct_val, 10.0)
                             elif "6%" in tier_str:
                                 abs_pct_val = max(abs_pct_val, 6.0)
@@ -475,6 +476,37 @@ def _parse_float(val) -> float:
         return None
 
 
+def _get_tw_tick_size(price: float, is_etf: bool = False) -> float:
+    if is_etf:
+        return 0.01 if price < 50 else 0.05
+    if price < 10:
+        return 0.01
+    if price < 50:
+        return 0.05
+    if price < 100:
+        return 0.1
+    if price < 500:
+        return 0.5
+    if price < 1000:
+        return 1.0
+    return 5.0
+
+
+def calc_tw_limit_prices(prev_close: float, symbol: str = "") -> tuple:
+    """依據台灣證交所/櫃買中心升降單位規則，由昨收價精算當日漲停價 (limit_up) 與跌停價 (limit_down)"""
+    if not prev_close or prev_close <= 0:
+        return None, None
+    ticker = (symbol or "").replace(".TWO", "").replace(".TW", "").strip()
+    is_etf = ticker.startswith("00")
+    raw_up = prev_close * 1.10
+    raw_down = prev_close * 0.90
+    t_up = _get_tw_tick_size(raw_up, is_etf)
+    t_down = _get_tw_tick_size(raw_down, is_etf)
+    limit_up = round(math.floor((raw_up + 1e-9) / t_up) * t_up, 2)
+    limit_down = round(math.ceil((raw_down - 1e-9) / t_down) * t_down, 2)
+    return limit_up, limit_down
+
+
 def fetch_quote_twse_official(symbol: str) -> dict:
     """
     【台股零延遲官方直連】直接向台灣證券交易所 / 櫃買中心基本市況報導 (mis.twse.com.tw?delay=0) 抓取逐筆撮合即時報價。
@@ -501,19 +533,34 @@ def fetch_quote_twse_official(symbol: str) -> dict:
 
     item = msg_arr[0]
     prev_close = _parse_float(item.get("y"))
-    # 優先取當盤成交價 z -> trade.z -> pz -> 最佳一檔委買委賣中間價
+    limit_up = _parse_float(item.get("u"))
+    limit_down = _parse_float(item.get("w"))
+    if (limit_up is None or limit_down is None) and prev_close and prev_close > 0:
+        calc_u, calc_w = calc_tw_limit_prices(prev_close, symbol)
+        limit_up = limit_up or calc_u
+        limit_down = limit_down or calc_w
+
+    # 優先取當盤成交價 z -> trade.z -> pz -> 最佳一檔有效委買委賣價（排除 0.0000 市價單代號）
     price = _parse_float(item.get("z"))
     if price is None and isinstance(item.get("trade"), dict):
         price = _parse_float(item["trade"].get("z"))
     if price is None:
         price = _parse_float(item.get("pz"))
     if price is None:
-        b_first = _parse_float((item.get("b") or "").split("_")[0])
-        a_first = _parse_float((item.get("a") or "").split("_")[0])
+        b_raw = str(item.get("b") or "")
+        a_raw = str(item.get("a") or "")
+        b_prices = [p for p in (_parse_float(x) for x in b_raw.split("_")) if p is not None and p > 0]
+        a_prices = [p for p in (_parse_float(x) for x in a_raw.split("_")) if p is not None and p > 0]
+        b_first = b_prices[0] if b_prices else None
+        a_first = a_prices[0] if a_prices else None
         if b_first and a_first:
             price = (b_first + a_first) / 2.0
-        else:
+        elif b_first or a_first:
             price = b_first or a_first
+        elif a_raw.strip() in ("-", "") and "0.0000" in b_raw and limit_up:
+            price = limit_up
+        elif b_raw.strip() in ("-", "") and "0.0000" in a_raw and limit_down:
+            price = limit_down
 
     if price is None or prev_close is None or prev_close <= 0:
         raise RuntimeError(f"TWSE {symbol} 暫無有效成交價 (price={price}, prev_close={prev_close})")
@@ -526,11 +573,17 @@ def fetch_quote_twse_official(symbol: str) -> dict:
 
     quote_time_tw = str(item.get("t") or "")
     change_pct = ((price - prev_close) / prev_close) * 100.0
+    is_limit_up = bool(limit_up and float(price) >= float(limit_up) - 1e-4)
+    is_limit_down = bool(limit_down and float(price) <= float(limit_down) + 1e-4)
     return {
         "symbol": symbol,
         "currency": "TWD",
         "price": float(price),
         "prev_close": float(prev_close),
+        "limit_up": float(limit_up) if limit_up else None,
+        "limit_down": float(limit_down) if limit_down else None,
+        "is_limit_up": is_limit_up,
+        "is_limit_down": is_limit_down,
         "change_pct": float(change_pct),
         "abs_change_pct": abs(float(change_pct)),
         "trading_date": trading_date,
@@ -640,11 +693,20 @@ def fetch_quote_yahoo(symbol: str, market: str = None) -> dict:
         latency_sec = max(0, int(time.time()) - int(reg_time))
 
     change_pct = ((price - prev_close) / prev_close) * 100.0
+    limit_up, limit_down, is_limit_up, is_limit_down = None, None, False, False
+    if inferred_market == "TW":
+        limit_up, limit_down = calc_tw_limit_prices(float(prev_close), symbol)
+        is_limit_up = bool(limit_up and float(price) >= float(limit_up) - 1e-4)
+        is_limit_down = bool(limit_down and float(price) <= float(limit_down) + 1e-4)
     return {
         "symbol": symbol,
         "currency": meta.get("currency", "TWD"),
         "price": float(price),
         "prev_close": float(prev_close),
+        "limit_up": limit_up,
+        "limit_down": limit_down,
+        "is_limit_up": is_limit_up,
+        "is_limit_down": is_limit_down,
         "change_pct": float(change_pct),
         "abs_change_pct": abs(float(change_pct)),
         "trading_date": trading_date,
@@ -675,7 +737,12 @@ def send_alert_email(stock: dict, quote: dict, tier_label: str):
         raise RuntimeError("未設定 GMAIL_USER / GMAIL_APP_PASSWORD 環境變數，無法發送預警信！")
 
     is_up = quote["change_pct"] >= 0
-    direction = "📈 盤中大漲" if is_up else "📉 盤中大跌"
+    if "漲停" in tier_label:
+        direction = "🔥 盤中漲停"
+    elif "跌停" in tier_label:
+        direction = "❄️ 盤中跌停"
+    else:
+        direction = "📈 盤中大漲" if is_up else "📉 盤中大跌"
     sign = "+" if is_up else ""
     color = "#d93025" if is_up else "#188038"
     now_str = get_taipei_now().strftime("%Y-%m-%d %H:%M:%S")
@@ -721,7 +788,7 @@ def send_alert_email(stock: dict, quote: dict, tier_label: str):
           </tr>
         </table>
         <div style="margin-top: 20px; padding: 12px; background-color: #f8f9fa; border-radius: 6px; font-size: 13px; color: #555;">
-          ⚡ <strong>秒級即時監控系統</strong>：每 15 秒即時追蹤最新成交 Tick（延遲僅 1~3 秒），當日漲跌幅首次達 <strong>±3%</strong>、擴大達 <strong>±6%</strong>、或劇震達 <strong>±10%</strong> 時立即推播至 {gmail_user}。
+          ⚡ <strong>秒級即時監控系統</strong>：每 15 秒即時追蹤最新成交 Tick（延遲僅 1~3 秒），當日漲跌幅首次達 <strong>±3%</strong>、擴大達 <strong>±6%</strong>、或達 <strong>台股漲跌停 / 美股 ±10%</strong> 時立即推播至 {gmail_user}。
         </div>
       </div>
     </div>
@@ -791,31 +858,50 @@ def run_quote_scan_tick(state: dict, holdings: list, force: bool = False, verbos
             if verbose:
                 src_tag = quote.get("source", "REALTIME")
                 lat_str = f" (延遲:{quote['latency_sec']}s)" if quote.get("latency_sec") is not None else ""
+                limit_tag = " [漲停]" if quote.get("is_limit_up") else (" [跌停]" if quote.get("is_limit_down") else "")
                 now_ts_str = get_taipei_now().strftime("%H:%M:%S")
                 print(
                     f"[{now_ts_str}] [QUOTE|{src_tag}] {stock['name']} ({stock['symbol']}) [交易日:{trading_date}]: "
                     f"現價={quote['price']} | 昨收={quote['prev_close']} | "
-                    f"漲跌={quote['change_pct']:+.2f}%{lat_str} | 當日已通報最高波幅={last_notified_abs:.2f}%"
+                    f"漲跌={quote['change_pct']:+.2f}%{limit_tag}{lat_str} | 當日已通報最高波幅={last_notified_abs:.2f}%"
                 )
 
             should_send = False
             tier_label = ""
-            if abs_pct >= 10.0 and last_notified_abs < 10.0:
-                should_send = True
-                tier_label = "≥ 10% 劇烈波動"
-            elif abs_pct >= 6.0 and last_notified_abs < 6.0:
-                should_send = True
-                tier_label = "≥ 6% 擴大波動"
-            elif abs_pct >= 3.0 and last_notified_abs < 3.0:
-                should_send = True
-                tier_label = "≥ 3% 首次達標"
+            is_top_tier = False
+            if market == "TW":
+                if quote.get("is_limit_up") and last_notified_abs < 10.0:
+                    should_send = True
+                    tier_label = "漲停觸發"
+                    is_top_tier = True
+                elif quote.get("is_limit_down") and last_notified_abs < 10.0:
+                    should_send = True
+                    tier_label = "跌停觸發"
+                    is_top_tier = True
+                elif abs_pct >= 6.0 and last_notified_abs < 6.0:
+                    should_send = True
+                    tier_label = "≥ 6% 擴大波動"
+                elif abs_pct >= 3.0 and last_notified_abs < 3.0:
+                    should_send = True
+                    tier_label = "≥ 3% 首次達標"
+            else:
+                if abs_pct >= 10.0 and last_notified_abs < 10.0:
+                    should_send = True
+                    tier_label = "≥ 10% 劇烈波動"
+                    is_top_tier = True
+                elif abs_pct >= 6.0 and last_notified_abs < 6.0:
+                    should_send = True
+                    tier_label = "≥ 6% 擴大波動"
+                elif abs_pct >= 3.0 and last_notified_abs < 3.0:
+                    should_send = True
+                    tier_label = "≥ 3% 首次達標"
 
             if should_send:
                 # 寄信前一刻再次與磁碟狀態及 Gmail 信箱同步，確保雲端與本地端雙引擎絕不重複寄信
                 sync_holdings_from_gmail(state, quiet=True)
                 last_notified_abs = float(state.get("alerts", {}).get(rec_key, 0.0))
                 if (
-                    (tier_label.startswith("≥ 10%") and last_notified_abs >= 10.0)
+                    (is_top_tier and last_notified_abs >= 10.0)
                     or (tier_label.startswith("≥ 6%") and last_notified_abs >= 6.0)
                     or (tier_label.startswith("≥ 3%") and last_notified_abs >= 3.0)
                 ):
@@ -824,7 +910,10 @@ def run_quote_scan_tick(state: dict, holdings: list, force: bool = False, verbos
                     continue
 
                 send_alert_email(stock, quote, tier_label)
-                alerts_map[rec_key] = round(abs_pct, 2)
+                if is_top_tier:
+                    alerts_map[rec_key] = max(round(abs_pct, 2), 10.0)
+                else:
+                    alerts_map[rec_key] = min(round(abs_pct, 2), 9.99)
                 triggered_any = True
                 save_state(state)
                 git_push_state_if_possible()
