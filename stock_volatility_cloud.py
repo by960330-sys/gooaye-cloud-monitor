@@ -507,11 +507,119 @@ def calc_tw_limit_prices(prev_close: float, symbol: str = "") -> tuple:
     return limit_up, limit_down
 
 
+def fetch_quote_tw_yahoo_realtime(symbol: str) -> dict:
+    """
+    【台股零延遲整股成交專線】直接向 Yahoo奇摩股市台灣端 (Systex 精誠/三竹直連證交所逐筆撮合源, delay=0)
+    抓取最新一筆「整股實際撮合成交價」。
+    嚴格驗證：
+    1. marketStatus == "open"（排除 pre-open / trial 盤前試算與收盤後試算）
+    2. regularMarketOpen > 0 且 volume > 0（確保當日 09:00:00 第一盤正式開盤撮合已完成）
+    3. 報價時間戳 >= 當日 09:00:00（徹底杜絕 08:30~08:59:59 盤前試算假價格誤報）
+    """
+    url = (
+        f"https://tw.stock.yahoo.com/_td-stock/api/resource/StockServices.stockList"
+        f";fields=avgPrice%2Corderbook;symbols={urllib.parse.quote(symbol)}"
+    )
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+    )
+    with urllib.request.urlopen(req, timeout=8) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    if not isinstance(data, list) or not data:
+        raise RuntimeError(f"TW Yahoo Realtime 未回傳 {symbol} 資料")
+
+    item = data[0]
+    mkt_status = str(item.get("marketStatus") or "").lower()
+    if mkt_status in ("trial", "pre", "pre-open", "pre_open"):
+        raise RuntimeError(f"TW {symbol} 目前處於試算階段 (marketStatus={mkt_status})，跳過非真實成交價")
+
+    price = _parse_float((item.get("price") or {}).get("raw") if isinstance(item.get("price"), dict) else item.get("price"))
+    prev_close = _parse_float(
+        (item.get("regularMarketPreviousClose") or {}).get("raw")
+        if isinstance(item.get("regularMarketPreviousClose"), dict)
+        else item.get("regularMarketPreviousClose")
+    )
+    open_price = _parse_float(
+        (item.get("regularMarketOpen") or {}).get("raw")
+        if isinstance(item.get("regularMarketOpen"), dict)
+        else item.get("regularMarketOpen")
+    )
+    volume = _parse_float(item.get("volume"))
+
+    if open_price is None or open_price <= 0 or volume is None or volume <= 0:
+        raise RuntimeError(f"TW {symbol} 尚未完成今日正式開盤首筆撮合 (open={open_price}, volume={volume})")
+
+    if price is None or price <= 0 or prev_close is None or prev_close <= 0:
+        raise RuntimeError(f"TW {symbol} 缺少有效整股成交價 (price={price}, prev_close={prev_close})")
+
+    reg_time_iso = str(item.get("regularMarketTime") or "").strip()
+    trading_date = get_market_trading_date("TW")
+    quote_time_tw = ""
+    latency_sec = 0
+    if reg_time_iso:
+        try:
+            dt_utc = datetime.fromisoformat(reg_time_iso.replace("Z", "+00:00"))
+            dt_tw = dt_utc.astimezone(timezone(timedelta(hours=8)))
+            trading_date = dt_tw.strftime("%Y-%m-%d")
+            quote_time_tw = dt_tw.strftime("%H:%M:%S")
+            if (dt_tw.hour * 60 + dt_tw.minute) < (9 * 60):
+                raise RuntimeError(f"TW {symbol} 報價時間 {quote_time_tw} 早於 09:00:00 開盤時間（屬盤前試算），不予採用")
+            latency_sec = max(0, int(time.time() - dt_utc.timestamp()))
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
+
+    limit_up = _parse_float(
+        (item.get("limitUpPrice") or {}).get("raw")
+        if isinstance(item.get("limitUpPrice"), dict)
+        else item.get("limitUpPrice")
+    )
+    limit_down = _parse_float(
+        (item.get("limitDownPrice") or {}).get("raw")
+        if isinstance(item.get("limitDownPrice"), dict)
+        else item.get("limitDownPrice")
+    )
+    if (limit_up is None or limit_down is None) and prev_close > 0:
+        calc_u, calc_w = calc_tw_limit_prices(prev_close, symbol)
+        limit_up = limit_up or calc_u
+        limit_down = limit_down or calc_w
+
+    change_pct = ((price - prev_close) / prev_close) * 100.0
+    is_limit_up = bool(item.get("limitUp")) or bool(limit_up and float(price) >= float(limit_up) - 1e-4)
+    is_limit_down = bool(item.get("limitDown")) or bool(limit_down and float(price) <= float(limit_down) + 1e-4)
+    return {
+        "symbol": symbol,
+        "currency": "TWD",
+        "price": float(price),
+        "prev_close": float(prev_close),
+        "limit_up": float(limit_up) if limit_up else None,
+        "limit_down": float(limit_down) if limit_down else None,
+        "is_limit_up": is_limit_up,
+        "is_limit_down": is_limit_down,
+        "change_pct": float(change_pct),
+        "abs_change_pct": abs(float(change_pct)),
+        "trading_date": trading_date,
+        "quote_time_tw": f"{quote_time_tw} [台股整股逐筆 0 延遲直連]",
+        "latency_sec": latency_sec,
+        "source": "TW_REALTIME_DIRECT",
+    }
+
+
 def fetch_quote_twse_official(symbol: str) -> dict:
     """
-    【台股零延遲官方直連】直接向台灣證券交易所 / 櫃買中心基本市況報導 (mis.twse.com.tw?delay=0) 抓取逐筆撮合即時報價。
-    完全不經由 Yahoo 轉手，0 延遲！
+    【台股零延遲官方直連】優先透過台股 0 延遲整股專線取得最新實際撮合成交價；
+    若需查詢證交所 mis.twse.com.tw，嚴格只取整股當盤實際成交價 `z`，
+    絕不採用 `pz`（盤前/緩撮試算價）、`trade.z`（盤中零股價 ft=20）或 `(b+a)/2`（委買委賣掛單中位價），
+    並嚴格過濾 09:00:00 前的盤前試算快照（如 08:59:56）。
     """
+    try:
+        return fetch_quote_tw_yahoo_realtime(symbol)
+    except Exception as tw_rt_err:
+        pass
+
     ticker = symbol.replace(".TWO", "").replace(".TW", "").strip()
     ex_prefix = "otc" if symbol.endswith(".TWO") else "tse"
     ex_ch = f"{ex_prefix}_{ticker}.tw"
@@ -532,6 +640,18 @@ def fetch_quote_twse_official(symbol: str) -> dict:
         raise RuntimeError(f"TWSE 官方 API 未回傳 {symbol} 資料")
 
     item = msg_arr[0]
+    quote_time_tw = str(item.get("t") or "").strip()
+    # 嚴格排除 09:00:00 以前的盤前試算揭示 (例如 08:59:56) 以及 ts=="1" (試算狀態) / ip=="3" (緩撮試算)
+    if quote_time_tw and quote_time_tw < "09:00:00":
+        raise RuntimeError(f"TWSE {symbol} 報價時間 {quote_time_tw} 屬於 09:00 前盤前試算，不予採用")
+    if str(item.get("ts") or "") == "1" or str(item.get("ip") or "") == "3":
+        raise RuntimeError(f"TWSE {symbol} 處於試算/緩撮狀態 (ts={item.get('ts')}, ip={item.get('ip')})，不予採用")
+
+    open_price = _parse_float(item.get("o"))
+    cum_vol = _parse_float(item.get("v"))
+    if open_price is None or open_price <= 0 or cum_vol is None or cum_vol <= 0:
+        raise RuntimeError(f"TWSE {symbol} 尚未完成今日正式開盤撮合 (o={open_price}, v={cum_vol})")
+
     prev_close = _parse_float(item.get("y"))
     limit_up = _parse_float(item.get("u"))
     limit_down = _parse_float(item.get("w"))
@@ -540,30 +660,10 @@ def fetch_quote_twse_official(symbol: str) -> dict:
         limit_up = limit_up or calc_u
         limit_down = limit_down or calc_w
 
-    # 優先取當盤成交價 z -> trade.z -> pz -> 最佳一檔有效委買委賣價（排除 0.0000 市價單代號）
+    # 嚴格只取整股當盤實際成交價 z（絕不取 pz 試算價、trade.z 零股價或 b/a 委買委賣掛單價）
     price = _parse_float(item.get("z"))
-    if price is None and isinstance(item.get("trade"), dict):
-        price = _parse_float(item["trade"].get("z"))
-    if price is None:
-        price = _parse_float(item.get("pz"))
-    if price is None:
-        b_raw = str(item.get("b") or "")
-        a_raw = str(item.get("a") or "")
-        b_prices = [p for p in (_parse_float(x) for x in b_raw.split("_")) if p is not None and p > 0]
-        a_prices = [p for p in (_parse_float(x) for x in a_raw.split("_")) if p is not None and p > 0]
-        b_first = b_prices[0] if b_prices else None
-        a_first = a_prices[0] if a_prices else None
-        if b_first and a_first:
-            price = (b_first + a_first) / 2.0
-        elif b_first or a_first:
-            price = b_first or a_first
-        elif a_raw.strip() in ("-", "") and "0.0000" in b_raw and limit_up:
-            price = limit_up
-        elif b_raw.strip() in ("-", "") and "0.0000" in a_raw and limit_down:
-            price = limit_down
-
     if price is None or prev_close is None or prev_close <= 0:
-        raise RuntimeError(f"TWSE {symbol} 暫無有效成交價 (price={price}, prev_close={prev_close})")
+        raise RuntimeError(f"TWSE {symbol} 當盤快照無整股成交價 z (z={item.get('z')})，拒絕使用試算價或掛單價")
 
     raw_d = str(item.get("d") or "").strip()
     if len(raw_d) == 8 and raw_d.isdigit():
@@ -571,7 +671,6 @@ def fetch_quote_twse_official(symbol: str) -> dict:
     else:
         trading_date = get_market_trading_date("TW")
 
-    quote_time_tw = str(item.get("t") or "")
     change_pct = ((price - prev_close) / prev_close) * 100.0
     is_limit_up = bool(limit_up and float(price) >= float(limit_up) - 1e-4)
     is_limit_down = bool(limit_down and float(price) <= float(limit_down) + 1e-4)
@@ -587,7 +686,7 @@ def fetch_quote_twse_official(symbol: str) -> dict:
         "change_pct": float(change_pct),
         "abs_change_pct": abs(float(change_pct)),
         "trading_date": trading_date,
-        "quote_time_tw": f"{quote_time_tw} [TWSE 證交所官方 0 延遲直連]",
+        "quote_time_tw": f"{quote_time_tw} [TWSE 證交所官方整股成交價]",
         "latency_sec": 0,
         "source": "TWSE_OFFICIAL_REALTIME",
     }
@@ -691,6 +790,14 @@ def fetch_quote_yahoo(symbol: str, market: str = None) -> dict:
     if reg_time and reg_time > 0:
         quote_time_tw = datetime.fromtimestamp(int(reg_time), timezone(timedelta(hours=8))).strftime("%H:%M:%S")
         latency_sec = max(0, int(time.time()) - int(reg_time))
+
+    if inferred_market == "TW":
+        today_tw = get_taipei_now().strftime("%Y-%m-%d")
+        reg_vol = _parse_float(meta.get("regularMarketVolume"))
+        if trading_date != today_tw or (quote_time_tw and quote_time_tw < "09:00:00") or not reg_vol or reg_vol <= 0:
+            raise RuntimeError(
+                f"TW 備援線路尚未完成今日 ({today_tw}) 09:00 正式開盤撮合 (date={trading_date}, time={quote_time_tw}, vol={reg_vol})"
+            )
 
     change_pct = ((price - prev_close) / prev_close) * 100.0
     limit_up, limit_down, is_limit_up, is_limit_down = None, None, False, False
