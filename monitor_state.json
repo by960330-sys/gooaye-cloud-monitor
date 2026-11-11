@@ -1,5 +1,5 @@
 {
-  "last_processed_ep": 712,
+  "last_processed_ep": 713,
   "processed_episodes": [
     706,
     707,
@@ -7,7 +7,8 @@
     709,
     710,
     711,
-    712
+    712,
+    713
   ],
-  "last_checked_at": "2026-11-11 14:50:39"
+  "last_checked_at": "2026-11-11 17:48:17"
 }
