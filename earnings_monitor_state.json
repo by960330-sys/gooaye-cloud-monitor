@@ -1,5 +1,5 @@
 {
-  "last_checked_at": "2026-11-13 20:49:30",
+  "last_checked_at": "2026-11-14 00:44:03",
   "analyzed_holdings": {
     "2330.TW": {
       "symbol": "2330.TW",
@@ -58,18 +58,17 @@
       "name": "Space Exploration Technologies",
       "market": "US",
       "last_quarter_date": "2026-09-30",
-      "last_video_id": "-RRKOP_JMdI",
+      "last_video_id": "sr8VQkZPipM",
       "analyzed_video_ids": [
         "-RRKOP_JMdI",
         "xetd5bxGPe4",
         "vc4Gso1GCkg",
         "OXxhrFEzcT8",
-        "rsFTR9iKdSo"
+        "rsFTR9iKdSo",
+        "sr8VQkZPipM"
       ],
-      "last_analyzed_at": "2026-10-28 13:51:27",
-      "drive_url": "https://drive.google.com/drive/folders/1AC-D_fFRMhPYgMnS9u8cpuYpgqYyaG8R",
-      "report_file": "SPCX_Space Exploration Technologies_2026-09-30_法說會與財報深度分析.md",
-      "model": "gemini-4-argon (High Flagship)"
+      "last_analyzed_at": "2026-11-14 00:44:02",
+      "last_trigger_reason": "【最新法說會召開】偵測到 Space Exploration Technologies (SPCX) 最新法說會完整錄音發布：《Space Exploration Technologies Corp ($SPCX) Q3 2026 Earnings Call》"
     }
   },
   "history": [
@@ -88,6 +87,14 @@
       "reason": "【最新法說會召開】偵測到 聯發科 (2454.TW) 最新法說會完整錄音發布：《2026/10/30  聯發科(2454)法說會讚，投資必買ASIC概念股  |何文高分析師 股市獲利王》",
       "analyzed_at": "2026-10-30 20:32:52",
       "drive_url": "https://drive.google.com/drive/folders/1AAAdiaVcfyRQsZrXpwGNT7VQfnqzQmD2"
+    },
+    {
+      "symbol": "SPCX",
+      "name": "Space Exploration Technologies",
+      "quarter": "2026-09-30",
+      "reason": "【最新法說會召開】偵測到 Space Exploration Technologies (SPCX) 最新法說會完整錄音發布：《Space Exploration Technologies Corp ($SPCX) Q3 2026 Earnings Call》",
+      "analyzed_at": "2026-11-14 00:44:02",
+      "drive_url": "https://drive.google.com/drive/folders/1AC-D_fFRMhPYgMnS9u8cpuYpgqYyaG8R"
     }
   ]
 }
