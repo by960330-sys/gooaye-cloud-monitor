@@ -52,7 +52,14 @@
       "name": "Space Exploration Technologies",
       "market": "US",
       "shares": 1
+    },
+    {
+      "symbol": "VOO",
+      "ticker": "VOO",
+      "name": "Vanguard S&P 500 ETF",
+      "market": "US",
+      "shares": 1
     }
   ],
-  "last_gmail_sync": "2026-11-13 14:34:41"
+  "last_gmail_sync": "2026-11-13 16:47:10"
 }
