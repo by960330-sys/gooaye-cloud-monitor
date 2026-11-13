@@ -30,7 +30,7 @@
     "SPCX:2026-11-12": 3.12,
     "2454.TW:2026-11-13": 10.0
   },
-  "last_checked_at": "2026-11-13 13:28:06",
+  "last_checked_at": "2026-11-13 13:36:10",
   "holdings": [
     {
       "symbol": "2330.TW",
@@ -47,13 +47,6 @@
       "shares": 11
     },
     {
-      "symbol": "VOO",
-      "ticker": "VOO",
-      "name": "Vanguard S&P 500 ETF",
-      "market": "US",
-      "shares": 1
-    },
-    {
       "symbol": "SPCX",
       "ticker": "SPCX",
       "name": "Space Exploration Technologies",
@@ -61,5 +54,5 @@
       "shares": 1
     }
   ],
-  "last_gmail_sync": "2026-11-13 13:10:12"
+  "last_gmail_sync": "2026-11-13 13:29:13"
 }
